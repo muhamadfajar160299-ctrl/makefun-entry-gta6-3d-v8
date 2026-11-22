@@ -95,7 +95,7 @@ function initLighting() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.6;   // bright night: nothing lost in the dark
+  renderer.toneMappingExposure = 1.75;   // bright night: nothing lost in the dark
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
@@ -137,7 +137,7 @@ function initLighting() {
   scene.add(moonCore);
 
   // Hemisphere: cool blue sky, warm ground bounce from the marina lights.
-  scene.add(new THREE.HemisphereLight(0x8fb0ff, 0x4a3220, 1.1));
+  scene.add(new THREE.HemisphereLight(0x8fb0ff, 0x4a3220, 1.25));
 
   // Moonlight key light (casts the soft shadows).
   const moonLight = new THREE.DirectionalLight(0xcfe0ff, 0.85);

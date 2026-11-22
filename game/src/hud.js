@@ -91,22 +91,22 @@ function drawMinimap() {
   const px = (x) => (x - worldMin) * scale;
   const pz = (z) => (z - worldMin) * scale;
   ctx.clearRect(0, 0, W, H);
-  // land
-  ctx.fillStyle = '#0e1530';
+  // land — near-black so the city blocks read as a bright map on top
+  ctx.fillStyle = '#060a18';
   ctx.fillRect(0, 0, W, H);
-  // bay (south)
-  ctx.fillStyle = '#0d3a63';
+  // bay (south) — a clear open blue, nothing like the land
+  ctx.fillStyle = '#1668b0';
   ctx.fillRect(0, pz(CITY.waterZ), W, H - pz(CITY.waterZ));
-  ctx.fillStyle = 'rgba(120,190,255,0.25)';
+  ctx.fillStyle = 'rgba(225,242,255,0.55)';
   for (let i = 0; i < 12; i++) {
     const y = pz(CITY.waterZ) + 8 + i * 9;
     ctx.fillRect(10 + ((i * 37) % 120), y, 46, 2);
   }
-  // promenade
-  ctx.fillStyle = '#5a5142';
+  // promenade — a warm brown strip along the waterfront
+  ctx.fillStyle = '#8a6f4d';
   ctx.fillRect(0, pz(CITY.marinaZ), W, pz(CITY.waterZ) - pz(CITY.marinaZ));
-  // blocks
-  ctx.fillStyle = '#1c2440';
+  // blocks — clearly lighter than the land, a dense city grid
+  ctx.fillStyle = '#2e3d6e';
   const intervals = [[-185, -155], [-141, -81], [-67, -7], [7, 67], [81, 141], [155, 185]];
   for (const [x0, x1] of intervals) {
     for (const [z0, z1] of intervals) {
@@ -114,16 +114,16 @@ function drawMinimap() {
       ctx.fillRect(px(x0), pz(z0), px(x1) - px(x0), pz(z1) - pz(z0));
     }
   }
-  // avenues
-  ctx.strokeStyle = '#8a93b8';
-  ctx.lineWidth = 5;
+  // avenues — bright, wide roads with a bright gold centreline
+  ctx.strokeStyle = '#f2f5ff';
+  ctx.lineWidth = 7;
   for (const c of CITY.roads) {
     ctx.beginPath(); ctx.moveTo(px(c), 0); ctx.lineTo(px(c), pz(185)); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, pz(c)); ctx.lineTo(W, pz(c)); ctx.stroke();
   }
-  ctx.strokeStyle = '#f7c948';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([5, 6]);
+  ctx.strokeStyle = '#ffd76a';
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([7, 5]);
   for (const c of CITY.roads) {
     ctx.beginPath(); ctx.moveTo(px(c), 0); ctx.lineTo(px(c), pz(185)); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, pz(c)); ctx.lineTo(W, pz(c)); ctx.stroke();
@@ -157,18 +157,18 @@ function drawMinimap() {
     ctx.arc(px(car.mesh.position.x), pz(car.mesh.position.z), 4, 0, Math.PI * 2);
     ctx.fill();
   }
-  // player arrow (white, points along heading)
+  // player arrow — big gold with a white edge, so it jumps off the map
   const pp = G.playerCar ? G.playerCar.mesh.position : (G.player ? G.player.mesh.position : { x: 0, z: 150 });
   const yaw = G.playerCar ? G.playerCar.yaw : (G.player ? G.player.yaw : Math.PI);
   const cx = px(pp.x), cy = pz(pp.z);
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(Math.atan2(Math.sin(yaw), -Math.cos(yaw)));
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeStyle = '#111';
-  ctx.lineWidth = 1.5;
+  ctx.fillStyle = '#ffc94d';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(0, -8); ctx.lineTo(5.5, 6); ctx.lineTo(0, 3); ctx.lineTo(-5.5, 6);
+  ctx.moveTo(0, -12); ctx.lineTo(8, 9); ctx.lineTo(0, 4.5); ctx.lineTo(-8, 9);
   ctx.closePath();
   ctx.fill(); ctx.stroke();
   ctx.restore();

@@ -13,7 +13,20 @@ const CITY = {
   lamps: [],
   yachts: [],
   neonSigns: [],
+  neonGlows: [],                      // glow sprites behind the neon signs
+  mastGlows: [],                      // glow sprites on the yacht mastheads
+  searchlights: [],                   // rotating beam rigs over the marina
 };
+
+// True when (x, z) falls inside a driving lane on either axis:
+// within the road half-width plus a margin of a centreline.
+function onRoadLane(x, z, margin) {
+  const m = CITY.roadHalf + margin;
+  for (const c of CITY.roads) {
+    if (Math.abs(x - c) < m || Math.abs(z - c) < m) return true;
+  }
+  return false;
+}
 
 // Merge many small geometries into one mesh (positions/normals/uvs/index + vertex colour).
 function mergeGeoms(parts) {
@@ -149,7 +162,7 @@ function buildBuildings() {
   for (const t of variants) {
     FACADE_MATS.push(new THREE.MeshStandardMaterial({
       map: t, roughness: 0.55, metalness: 0.35, emissive: 0xffffff,
-      emissiveMap: t, emissiveIntensity: 0.9,
+      emissiveMap: t, emissiveIntensity: 1.05,
     }));
   }
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x141824, roughness: 0.9 });
@@ -160,6 +173,8 @@ function buildBuildings() {
     ['HOTEL MARINA', '#ff9d3c'], ['CASINO ROYALE', '#ff4d6d'], ['YACHT CLUB', '#37e0c8'],
     ['NEON BAY', '#c86bff'], ['SKYLINE', '#5ea8ff'], ['PALM COURT', '#ffd76a'],
     ['AZURE', '#37b6ff'], ['THE GOLDEN PALM', '#ffcf5e'],
+    ['VELMARA', '#37e0c8'], ['MARINA BAY', '#ff5e8a'], ['THE PALMS', '#ffd76a'],
+    ['NEON NIGHTS', '#c86bff'], ['GOLDEN HOUR', '#ffb03c'], ['LUNA BAR', '#5ea8ff'],
   ];
   let neonIdx = 0;
   for (const [x0, x1] of intervals) {
@@ -198,8 +213,8 @@ function buildBuildings() {
           bg.position.copy(beacon.position);
           scene.add(bg);
         }
-        // neon sign on the marina-facing hotels and a few towers
-        if ((marinaRow || h > 44) && neonIdx < neonTexts.length) {
+        // neon sign on the marina-facing hotels and the taller towers
+        if ((marinaRow || h > 38) && neonIdx < neonTexts.length) {
           const [txt, col] = neonTexts[neonIdx++];
           const tex = neonSignTexture(txt, col);
           const sign = new THREE.Mesh(
@@ -212,6 +227,7 @@ function buildBuildings() {
           sg.position.copy(sign.position); sg.position.z += 1.5;
           scene.add(sg);
           CITY.neonSigns.push(sign.material);
+          CITY.neonGlows.push(sg);
         }
       }
     }
@@ -312,7 +328,7 @@ function buildMarina() {
     }
   }, 10, 10);
   G.waterMat = new THREE.MeshPhongMaterial({
-    color: 0x14507e, map: G.waterTex, shininess: 160, specular: 0xbfe0ff,
+    color: 0x1a5c94, map: G.waterTex, shininess: 160, specular: 0xbfe0ff,
   });
   const water = new THREE.Mesh(new THREE.PlaneGeometry(560, 260), G.waterMat);
   water.rotation.x = -Math.PI / 2;
@@ -382,6 +398,7 @@ function buildMarina() {
     const glow = makeGlowSprite('rgba(255,240,200,0.9)', 6, 0.8);
     glow.position.set(0, 11.6, 1);
     yacht.add(glow);
+    CITY.mastGlows.push(glow);
     const port = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0xff3344 }));
     port.position.set(-2.6, 1.6, 8);
@@ -444,12 +461,24 @@ function buildStreetProps() {
     const nut = new THREE.SphereGeometry(0.3 * s, 6, 6);
     crownParts.push({ geo: nut, matrix: xform(x + 0.3 * s, 6.7 * s, z, 0), color: new THREE.Color(0x8a6a3a) });
   }
-  // palm rows along the promenade and the marina boulevard
-  for (let x = -200; x <= 200; x += 16) addPalm(x, 172, randRange(cityRand, 0.9, 1.15));
-  for (let z = -180; z <= 150; z += 26) { addPalm(-11.5, z, 1); addPalm(11.5, z + 13, 1); }
-  for (let x = -180; x <= 180; x += 40) { addPalm(x, -11.5, 0.95); addPalm(x + 20, 11.5, 0.95); }
-  scene.add(new THREE.Mesh(mergeGeoms(trunkParts),
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })));
+  // Palm rows. Every palm stands on a sidewalk, 10 units off its avenue's
+  // centreline (clear of the 7-wide driving lane), and none is planted
+  // inside the lane of any crossing avenue — no palm in any road, ever.
+  for (let x = -200; x <= 200; x += 16) {
+    if (!onRoadLane(x, 172, 1.5)) addPalm(x, 172, randRange(cityRand, 0.9, 1.15));
+  }
+  for (let z = -180; z <= 150; z += 26) {
+    if (!onRoadLane(-10, z, 1.5)) addPalm(-10, z, 1);
+    if (!onRoadLane(10, z + 13, 1.5)) addPalm(10, z + 13, 1);
+  }
+  for (let x = -180; x <= 180; x += 40) {
+    if (!onRoadLane(x, -10, 1.5)) addPalm(x, -10, 0.95);
+    if (!onRoadLane(x + 20, 10, 1.5)) addPalm(x + 20, 10, 0.95);
+  }
+  const trunkMesh = new THREE.Mesh(mergeGeoms(trunkParts),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
+  trunkMesh.userData.propCheck = 'trunk';   // lane check reads these bases
+  scene.add(trunkMesh);
   const crowns = new THREE.Mesh(mergeGeoms(crownParts),
     new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }));
   crowns.castShadow = true;
@@ -466,6 +495,7 @@ function buildStreetProps() {
     }
   }
   for (const [x, z, ry] of lampSpots) {
+    if (onRoadLane(x, z, 1)) continue;   // never plant a pole in a driving lane
     poleParts.push({ geo: new THREE.CylinderGeometry(0.09, 0.13, 6.4, 6), matrix: xform(x, 3.2, z, 0), color: poleCol });
     const arm = new THREE.BoxGeometry(1.6, 0.1, 0.1);
     const am = new THREE.Matrix4().makeTranslation(x, 6.3, z)
@@ -477,13 +507,15 @@ function buildStreetProps() {
       new THREE.MeshBasicMaterial({ color: 0xffe2a0 }));
     head.position.set(hx, 6.25, z);
     scene.add(head);
-    const glow = makeGlowSprite('rgba(255,205,120,0.9)', 7, 0.6);
+    const glow = makeGlowSprite('rgba(255,205,120,0.9)', 9, 0.75);
     glow.position.set(hx, 6.25, z);
     scene.add(glow);
     CITY.lamps.push({ x: hx, z });
   }
-  scene.add(new THREE.Mesh(mergeGeoms(poleParts),
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.6 })));
+  const poleMesh = new THREE.Mesh(mergeGeoms(poleParts),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.6 }));
+  poleMesh.userData.propCheck = 'pole';   // lane check reads these bases
+  scene.add(poleMesh);
 
   // benches + planters on the promenade
   const benchParts = [];
@@ -512,6 +544,102 @@ function buildStreetProps() {
     const gg = makeGlowSprite('rgba(45,255,122,0.9)', 4, 0.7);
     gg.position.copy(green.position);
     scene.add(gg);
+  }
+  buildPromenadeLife();
+}
+
+// ---- promenade life: cafe tables, kiosks, planters, string lights ----
+function buildPromenadeLife() {
+  const scene = G.scene;
+  const parts = [];
+  const wood = new THREE.Color(0x7a5c38);
+  const white = new THREE.Color(0xe8e4da);
+  const green = new THREE.Color(0x2a7a44);
+  const terracotta = new THREE.Color(0xa85a34);
+  // cafe tables with umbrellas along the water edge, clear of the
+  // waterfront chase line (z 177) and slotted between the benches
+  const cafeSpots = [[-70, 184], [-46, 184], [-22, 184], [2, 184], [26, 184], [74, 184]];
+  for (const [x, z] of cafeSpots) {
+    parts.push({ geo: new THREE.CylinderGeometry(0.09, 0.09, 1.0, 6), matrix: xform(x, 0.5, z, 0), color: wood });
+    parts.push({ geo: new THREE.CylinderGeometry(1.15, 1.15, 0.08, 12), matrix: xform(x, 1.02, z, 0), color: white });
+    parts.push({ geo: new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), matrix: xform(x, 2.2, z, 0), color: wood });
+    parts.push({ geo: new THREE.ConeGeometry(1.7, 0.9, 8), matrix: xform(x, 3.9, z, 0), color: terracotta });
+    for (const [dx, dz] of [[-1.3, 0.6], [1.3, -0.6]]) {
+      parts.push({ geo: new THREE.BoxGeometry(0.55, 0.08, 0.55), matrix: xform(x + dx, 0.55, z + dz, 0), color: wood });
+    }
+  }
+  // planters with shrubs along the water edge (never in a driving lane)
+  for (let x = -180; x <= 180; x += 30) {
+    if (onRoadLane(x, 188, 1.5)) continue;
+    parts.push({ geo: new THREE.BoxGeometry(1.6, 0.7, 1.6), matrix: xform(x, 0.35, 188, 0), color: terracotta });
+    parts.push({ geo: new THREE.SphereGeometry(0.85, 8, 6), matrix: xform(x, 1.1, 188, 0), color: green });
+  }
+  scene.add(new THREE.Mesh(mergeGeoms(parts),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })));
+  // food kiosks with glowing awnings, slotted between the benches
+  for (const [x, z, col] of [[50, 186, 0xff5e8a], [-58, 184, 0xffb03c]]) {
+    const kiosk = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 2.2, 2.2),
+      new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, emissive: col, emissiveIntensity: 0.25 }));
+    body.position.y = 1.1;
+    kiosk.add(body);
+    const awn = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.12, 2.6),
+      new THREE.MeshStandardMaterial({ color: 0xf2f5fa, roughness: 0.6 }));
+    awn.position.y = 2.35;
+    kiosk.add(awn);
+    const glow = makeGlowSprite('rgba(255,220,150,0.9)', 7, 0.7);
+    glow.position.y = 2.6;
+    kiosk.add(glow);
+    kiosk.position.set(x, 0, z);
+    scene.add(kiosk);
+  }
+  // second bench row facing the water
+  const benchParts2 = [];
+  for (let x = -178; x <= 178; x += 24) {
+    benchParts2.push({ geo: new THREE.BoxGeometry(3.2, 0.18, 1), matrix: xform(x, 0.75, 186.5, 0), color: wood });
+    benchParts2.push({ geo: new THREE.BoxGeometry(3.2, 0.9, 0.14), matrix: xform(x, 1.1, 186.95, 0), color: wood });
+  }
+  scene.add(new THREE.Mesh(mergeGeoms(benchParts2),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 })));
+  // string lights sagging between the promenade palms near the walk
+  for (let x = -64; x < 80; x += 16) {
+    for (let i = 1; i <= 4; i++) {
+      const bx = x + (i / 5) * 16;
+      const by = 6.4 - Math.sin((i / 5) * Math.PI) * 1.1;
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 6),
+        new THREE.MeshBasicMaterial({ color: 0xffd9a0 }));
+      bulb.position.set(bx, by, 172);
+      scene.add(bulb);
+      const glow = makeGlowSprite('rgba(255,205,130,0.95)', 1.6, 0.8);
+      glow.position.set(bx, by, 172);
+      scene.add(glow);
+    }
+  }
+}
+
+// ---- searchlights sweeping the sky over the marina ----
+function buildSearchlights() {
+  const scene = G.scene;
+  for (const [bx, bz] of [[-60, 176], [70, 176]]) {
+    const rig = new THREE.Group();
+    rig.position.set(bx, 0, bz);
+    const geo = new THREE.CylinderGeometry(7, 0.7, 95, 12, 1, true);
+    geo.translate(0, 47.5, 0);
+    const beam = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xfff2c8, transparent: true, opacity: 0.07,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, fog: false,
+    }));
+    beam.rotation.z = 0.42;
+    rig.add(beam);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.2, 1.6, 10),
+      new THREE.MeshStandardMaterial({ color: 0x2a3350, roughness: 0.4, metalness: 0.7 }));
+    base.position.y = 0.8;
+    rig.add(base);
+    const glow = makeGlowSprite('rgba(255,242,200,0.95)', 9, 0.85);
+    glow.position.y = 2.2;
+    rig.add(glow);
+    scene.add(rig);
+    CITY.searchlights.push(rig);
   }
 }
 
@@ -543,6 +671,7 @@ function buildCity() {
   buildBuildings();
   buildMarina();
   buildStreetProps();
+  buildSearchlights();
   buildObjectiveBeacon();
 }
 
@@ -558,8 +687,20 @@ function animateCity(dt, t) {
     const s = 1 + Math.sin(t * 3) * 0.08;
     G.objectiveBeacon.userData.ring.scale.set(s, s, 1);
   }
-  // neon shimmer: subtle brightness breathing so signs feel alive
+  // neon shimmer: strong brightness breathing so signs feel alive
   for (let i = 0; i < CITY.neonSigns.length; i++) {
-    CITY.neonSigns[i].opacity = 0.92 + Math.sin(t * 2.2 + i * 1.7) * 0.08;
+    CITY.neonSigns[i].opacity = 0.82 + Math.sin(t * 2.2 + i * 1.7) * 0.18;
+  }
+  for (let i = 0; i < CITY.neonGlows.length; i++) {
+    const s = 24 + Math.sin(t * 2.2 + i * 1.7) * 5;
+    CITY.neonGlows[i].scale.set(s, s, 1);
+  }
+  // yacht mast lights blink in turn
+  for (let i = 0; i < CITY.mastGlows.length; i++) {
+    CITY.mastGlows[i].material.opacity = 0.35 + 0.65 * Math.abs(Math.sin(t * 1.8 + i * 2.1));
+  }
+  // searchlights sweep the sky over the marina
+  for (let i = 0; i < CITY.searchlights.length; i++) {
+    CITY.searchlights[i].rotation.y += dt * (i === 0 ? 0.22 : -0.17);
   }
 }

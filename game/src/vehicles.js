@@ -57,7 +57,7 @@ function buildCarMesh(colorHex, opts) {
     const hl = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.06), headMat);
     hl.position.set(s * 0.62, 0.82, 2.26);
     group.add(hl);
-    const glow = makeGlowSprite('rgba(255,244,200,0.95)', 1.8, 0.85);
+    const glow = makeGlowSprite('rgba(255,244,200,0.95)', 2.6, 0.85);
     glow.position.set(s * 0.62, 0.82, 2.4);
     group.add(glow);
   }
@@ -66,7 +66,7 @@ function buildCarMesh(colorHex, opts) {
     new THREE.MeshBasicMaterial({ color: 0xff2233 }));
   tail.position.set(0, 0.86, -2.27);
   group.add(tail);
-  const tailGlow = makeGlowSprite('rgba(255,40,60,0.8)', 3.2, 0.6);
+  const tailGlow = makeGlowSprite('rgba(255,40,60,0.8)', 4.2, 0.6);
   tailGlow.position.set(0, 0.86, -2.4);
   group.add(tailGlow);
   // mirrors
@@ -314,7 +314,7 @@ function spawnInitialVehicles() {
     spawnCar(x, z, yaw, { kind: 'parked', sport: cityRand() < 0.4 });
   }
   // moving traffic on the avenues
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 12; i++) {
     const axis = cityRand() < 0.5 ? 'x' : 'z';
     const line = pick(cityRand, CITY.roads);
     const dir = cityRand() < 0.5 ? 1 : -1;

@@ -51,10 +51,13 @@ function applyShot() {
     p.mesh.position.set(10, 0, 180);
     p.yaw = 0.5;   // facing the bay, three-quarter view
     G.camYaw = Math.PI + 0.55;   // camera north-west, diagonal over the bay
-    G.camPitch = 0.3;
-    G.camDist = 8.5;
+    G.camPitch = 0.22;   // low angle: more bay and skyline, less empty tile
+    G.camDist = 9;
     G.wanted = 0;
     updateWantedHud();
+    // a crowd right around Rae so the frame is busy from the first frame
+    const crowdSpots = [[2, 176], [16, 174], [20, 182], [4, 184], [24, 178], [-2, 180], [12, 172], [18, 188]];
+    for (const [cx, cz] of crowdSpots) spawnPed(cx, cz, cityRand() * Math.PI * 2);
   } else if (shot === 3) {
     // CITY DRIVE — driving up the main avenue with traffic and towers.
     G.missionIndex = 2; G.missionStep = 0;
@@ -96,4 +99,7 @@ function applyShot() {
   }
   // snap the camera to the staged framing on the very first frame
   updateCamera(10);
+  // paint the minimap once even when the shot ends on a menu screen
+  // (the loop only redraws it while playing)
+  drawMinimap();
 }

@@ -54,10 +54,14 @@ function spawnPed(x, z, yaw) {
 
 function spawnInitialPeds() {
   // promenade crowd — the marina is alive at night
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 26; i++) {
     spawnPed(randRange(cityRand, -180, 180), randRange(cityRand, 170, 186), cityRand() * Math.PI * 2);
   }
-  for (let i = 0; i < 10; i++) {
+  // a dense knot of strollers around the marina walk, where shot 2 is taken
+  for (let i = 0; i < 12; i++) {
+    spawnPed(randRange(cityRand, -8, 32), randRange(cityRand, 170, 188), cityRand() * Math.PI * 2);
+  }
+  for (let i = 0; i < 14; i++) {
     const road = pick(cityRand, CITY.roads);
     const along = randRange(cityRand, -180, 160);
     const side = cityRand() < 0.5 ? 9.4 : -9.4;
