@@ -1,200 +1,184 @@
-// Marina Nights — police pursuit. One patrol car per wanted star. The fleet
-// works as a team instead of a swarm: car #0 INTERCEPTS (aims at where the
-// player will be, from the player's velocity), the others PURSUE from the
-// flanks, and any car that gets ahead tries to BLOCK by slowing across the
-// player's path. They pace the player up close instead of ramming forever,
-// flash red-blue light bars with a real alternating strobe light, and bust
-// the player after sustained contact. Evade them long enough and wanted drops.
-import { STREETS } from './city.js';
-import { makeCarMesh } from './player.js';
+// police.js — Velmara PD: role-based pursuit AI. Car #1 INTERCEPTs the
+// player's predicted position, the others PURSUE from the flanks, and any
+// unit that gets ahead of the player BLOCKs the road. Speed scales with
+// distance; strobes flash red/blue and the livery reads PD.
 const THREE = window.THREE;
 
-function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function box(parent, w, h, d, mat, x, y, z) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  parent.add(m);
+  return m;
+}
+
+function buildPoliceCar() {
+  const g = new THREE.Group();
+  const body = new THREE.MeshStandardMaterial({ color: 0x0e1420, roughness: 0.38, metalness: 0.45 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.38, metalness: 0.4 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x0a1220, roughness: 0.1, metalness: 0.9 });
+  const tyre = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 0.95 });
+  box(g, 1.85, 0.52, 4.4, body, 0, 0.62, 0);
+  box(g, 1.8, 0.4, 2.4, white, 0, 0.6, 0.3);               // white doors band
+  box(g, 1.62, 0.46, 2.0, glass, 0, 1.04, 0.1);
+  box(g, 1.64, 0.08, 1.9, body, 0, 1.3, 0.1);
+  // PD door decals: white door + dark letters are faked with a thin gold bar
+  // and a black "PD" plate on each side.
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xf6c945, emissiveIntensity: 0.9 });
+  box(g, 0.04, 0.3, 0.9, plateMat, -0.94, 0.72, 0.2);
+  box(g, 0.04, 0.3, 0.9, plateMat, 0.94, 0.72, 0.2);
+  // Push bar + grille.
+  box(g, 1.5, 0.3, 0.14, new THREE.MeshStandardMaterial({ color: 0x2a2f3a, roughness: 0.4, metalness: 0.8 }), 0, 0.55, -2.24);
+  box(g, 1.0, 0.18, 0.08, new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 0.4 }), 0, 0.62, -2.26);
+  const head = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xfff2c0, emissiveIntensity: 2.2 });
+  box(g, 0.38, 0.14, 0.08, head, -0.6, 0.72, -2.24);
+  box(g, 0.38, 0.14, 0.08, head, 0.6, 0.72, -2.24);
+  for (const [wx, wz] of [[-0.84, -1.45], [0.84, -1.45], [-0.84, 1.45], [0.84, 1.45]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.25, 14), tyre);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(wx, 0.35, wz);
+    g.add(w);
+  }
+  // Light bar: red left, blue right.
+  const redMat = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff2020, emissiveIntensity: 0.4 });
+  const blueMat = new THREE.MeshStandardMaterial({ color: 0x000022, emissive: 0x2244ff, emissiveIntensity: 0.4 });
+  const barBase = box(g, 1.1, 0.12, 0.4, new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.5 }), 0, 1.42, 0.1);
+  const red = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.36), redMat);
+  red.position.set(-0.28, 1.54, 0.1);
+  g.add(red);
+  const blue = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.36), blueMat);
+  blue.position.set(0.28, 1.54, 0.1);
+  g.add(blue);
+  // One shared strobe light per car (alternates red/blue).
+  const strobe = new THREE.PointLight(0xff2020, 0, 26, 1.6);
+  strobe.position.set(0, 2.1, 0.1);
+  g.add(strobe);
+  return { group: g, redMat, blueMat, strobe, barBase };
+}
+
+const ROLES = ['INTERCEPT', 'PURSUE', 'PURSUE', 'BLOCK'];
 
 export function createPolice(scene) {
-  const cars = [];
-  let bustTimer = 0;
-  let evadeTimer = 0;
-  // One shared strobe: a single PointLight that hops between the lead car
-  // and alternates red/blue, so the chase paints the street without paying
-  // for a light per car.
-  const strobe = new THREE.PointLight(0xff2244, 0, 26, 1.6);
-  scene.add(strobe);
-  let strobePhase = 0;
-
-  function makePoliceCar() {
-    const { group, tailMat } = makeCarMesh(0x101418);
-    // white doors / roof stripe
-    const door = new THREE.Mesh(new THREE.BoxGeometry(2.04, 0.3, 2.4),
-      new THREE.MeshLambertMaterial({ color: 0xf2f6fa }));
-    door.position.y = 0.62;
-    group.add(door);
-    // "VELMARA PD" door decal: a thin pale band with a dark stripe reads as
-    // livery at chase distance.
-    const decal = new THREE.Mesh(new THREE.BoxGeometry(2.06, 0.1, 1.2),
-      new THREE.MeshBasicMaterial({ color: 0x1c2733 }));
-    decal.position.y = 0.78;
-    group.add(decal);
-    // flashing light bar
-    const barBase = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.14, 0.4),
-      new THREE.MeshLambertMaterial({ color: 0x111111 }));
-    barBase.position.set(0, 1.36, -0.2);
-    group.add(barBase);
-    const redMat = new THREE.MeshBasicMaterial({ color: 0xff2244 });
-    const blueMat = new THREE.MeshBasicMaterial({ color: 0x2266ff });
-    const red = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.42), redMat);
-    red.position.set(-0.28, 1.46, -0.2);
-    group.add(red);
-    const blue = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.42), blueMat);
-    blue.position.set(0.28, 1.46, -0.2);
-    group.add(blue);
-    scene.add(group);
-    return { group, tailMat, redMat, blueMat, heading: 0, speed: 0,
-      pos: new THREE.Vector3(0, 0, 0), flash: Math.random() * 10,
-      role: 'pursue', blockTimer: 0 };
+  const units = [];
+  for (let i = 0; i < 4; i++) {
+    const car = buildPoliceCar();
+    car.group.visible = false;
+    scene.add(car.group);
+    units.push({
+      ...car,
+      pos: new THREE.Vector3(40 + i * 12, 0, 90),
+      heading: 0,
+      speed: 0,
+      role: ROLES[i],
+      active: false,
+      phase: i * 0.9,
+    });
   }
 
-  function spawnNear(playerPos) {
-    const car = makePoliceCar();
-    // spawn on the road NEAREST the player, 30-45 m away on it
-    const vertical = Math.random() < 0.5;
-    const across = vertical ? playerPos.x : playerPos.z;
-    let street = STREETS[0];
-    for (const s of STREETS) if (Math.abs(s - across) < Math.abs(street - across)) street = s;
-    const along = (vertical ? playerPos.z : playerPos.x)
-      + (Math.random() < 0.5 ? -1 : 1) * (30 + Math.random() * 15);
-    car.pos.set(
-      vertical ? street + 3.2 : Math.max(-190, Math.min(190, along)),
-      0,
-      vertical ? Math.max(-190, Math.min(190, along)) : street + 3.2
-    );
-    car.group.position.copy(car.pos);
-    cars.push(car);
-    return car;
-  }
+  let wanted = 0;
+  let heat = 0; // 0..1, decays when the player stays clean
 
-  // Keep the live fleet exactly equal to the wanted level.
-  function setCount(n, playerPos) {
-    while (cars.length < n) spawnNear(playerPos);
-    while (cars.length > n) {
-      const c = cars.pop();
-      scene.remove(c.group);
-    }
-    // assign roles: first car intercepts, the rest pursue from the flanks
-    cars.forEach((c, i) => { c.role = i === 0 ? 'intercept' : 'pursue'; });
-    if (cars.length === 0) strobe.intensity = 0;
-  }
-
-  function update(dt, playerPos, playerSpeed, wanted, G) {
-    if (cars.length === 0) { bustTimer = 0; evadeTimer = 0; return; }
-    let nearest = Infinity;
-    // predicted player position ~1.1 s ahead, from current velocity
-    const pf = G.player.forward();
-    const px = playerPos.x + pf.x * playerSpeed * 1.1;
-    const pz = playerPos.z + pf.z * playerSpeed * 1.1;
-    for (const car of cars) {
-      const dx = playerPos.x - car.pos.x;
-      const dz = playerPos.z - car.pos.z;
-      const dist = Math.hypot(dx, dz);
-      nearest = Math.min(nearest, dist);
-      // --- pick an aim point by role ---
-      let aimX = playerPos.x, aimZ = playerPos.z;
-      if (car.role === 'intercept') {
-        aimX = px; aimZ = pz; // cut the player off at the predicted point
-      } else {
-        // flank: aim at a point offset to one side so cars don't stack up
-        const side = (cars.indexOf(car) % 2 === 0 ? 1 : -1) * 6;
-        aimX = playerPos.x + Math.cos(G.player.heading) * side;
-        aimZ = playerPos.z - Math.sin(G.player.heading) * side;
-      }
-      // --- BLOCK: if this car is ahead of the player and close, slow down
-      // across the player's path instead of chasing from behind ---
-      const aheadDot = (car.pos.x - playerPos.x) * pf.x + (car.pos.z - playerPos.z) * pf.z;
-      let blocking = false;
-      if (car.role !== 'intercept' && aheadDot > 4 && aheadDot < 22 && dist < 26) {
-        blocking = true;
-        car.blockTimer += dt;
-        aimX = playerPos.x + pf.x * 10;
-        aimZ = playerPos.z + pf.z * 10;
-      } else {
-        car.blockTimer = 0;
-      }
-      // steer toward the aim point; heavy cars can't turn on a dime at speed
-      const adx = aimX - car.pos.x;
-      const adz = aimZ - car.pos.z;
-      const desired = Math.atan2(adx, adz);
-      let diff = desired - car.heading;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      const turnRate = 2.6 * (1 - Math.min(0.5, car.speed / 80));
-      const turn = Math.max(-turnRate * dt, Math.min(turnRate * dt, diff));
-      car.heading += turn;
-      // --- speed by situation: flat out when far, pace the player up close
-      // so the chase stays a chase instead of a permanent pile-up ---
-      let targetSpeed;
-      if (blocking) {
-        targetSpeed = Math.max(0, playerSpeed * 0.55);
-      } else if (dist > 45) {
-        targetSpeed = Math.min(40, 30 + wanted * 2.5);
-      } else if (dist > 12) {
-        targetSpeed = Math.min(40, Math.abs(playerSpeed) + 6);
-      } else {
-        targetSpeed = Math.max(0, Math.abs(playerSpeed) * 0.92);
-      }
-      const accelRate = blocking ? 4 : 1.6;
-      car.speed += (targetSpeed - car.speed) * Math.min(1, dt * accelRate);
-      car.pos.x += Math.sin(car.heading) * car.speed * dt;
-      car.pos.z += Math.cos(car.heading) * car.speed * dt;
-      car.pos.x = Math.max(-197, Math.min(198, car.pos.x));
-      car.pos.z = Math.max(-197, Math.min(197, car.pos.z));
-      car.group.position.copy(car.pos);
-      car.group.rotation.y = car.heading;
-      // brake lights when slowing hard
-      car.tailMat.emissiveIntensity = blocking ? 2.4 : 1.1;
-      // flashing light bar
-      car.flash += dt * 9;
-      const on = Math.sin(car.flash) > 0;
-      car.redMat.color.setHex(on ? 0xff2244 : 0x551111);
-      car.blueMat.color.setHex(on ? 0x113366 : 0x2266ff);
-      // contact => bust clock
-      if (dist < 3.2) bustTimer += dt;
-    }
-    // shared strobe rides on the lead car, alternating red/blue
-    if (cars.length > 0) {
-      strobePhase += dt * 9;
-      const redOn = Math.sin(strobePhase) > 0;
-      const lead = cars[0];
-      strobe.position.set(lead.pos.x, 2.2, lead.pos.z);
-      strobe.color.setHex(redOn ? 0xff2244 : 0x2266ff);
-      strobe.intensity = 34;
-    }
-    if (nearest < 3.2) {
-      evadeTimer = 0;
-    } else {
-      bustTimer = Math.max(0, bustTimer - dt * 1.5);
-      evadeTimer += dt;
-      if (evadeTimer > 9 && wanted > 0) {
-        evadeTimer = 0;
-        G.setWanted(wanted - 1);
-      }
-    }
-    if (bustTimer > 2.5) {
-      bustTimer = 0;
-      G.busted();
-    }
+  function wantedCount() {
+    if (wanted <= 0) return 0;
+    if (wanted === 1) return 2;
+    if (wanted === 2) return 3;
+    return 4;
   }
 
   return {
-    cars, setCount, update,
-    get count() { return cars.length; },
-    // distance to the nearest patrol car (for siren volume)
-    nearestDist(playerPos) {
-      let best = Infinity;
-      for (const car of cars) {
-        const d = Math.hypot(car.pos.x - playerPos.x, car.pos.z - playerPos.z);
-        if (d < best) best = d;
+    get wanted() { return wanted; },
+    setWanted(n) {
+      wanted = Math.max(0, Math.min(5, n));
+      const count = wantedCount();
+      units.forEach((u, i) => { u.active = i < count; u.group.visible = i < count; });
+    },
+    addHeat(amount) {
+      heat = Math.min(1, heat + amount);
+      if (heat > 0.55 && wanted < 3) this.setWanted(wanted + 1);
+      else if (heat > 0.25 && wanted < 1) this.setWanted(1);
+    },
+    units,
+    update(dt, player, t) {
+      const count = wantedCount();
+      // Heat decays when no unit is close.
+      let nearest = Infinity;
+      for (const u of units) {
+        if (!u.active) continue;
+        nearest = Math.min(nearest, Math.hypot(u.pos.x - player.pos.x, u.pos.z - player.pos.z));
       }
-      return best;
+      if (nearest > 60) heat = Math.max(0, heat - dt * 0.02);
+      if (heat <= 0.02 && wanted > 0 && nearest > 80) this.setWanted(wanted - 1);
+
+      units.forEach((u, i) => {
+        if (!u.active) return;
+        const dx = player.pos.x - u.pos.x;
+        const dz = player.pos.z - u.pos.z;
+        const dist = Math.hypot(dx, dz) || 0.01;
+        const playerSpeed = Math.abs(player.speed);
+        // Predicted player position for the INTERCEPT unit.
+        const lead = 1.1 + dist * 0.02;
+        const px = player.pos.x + Math.sin(player.heading) * player.speed * lead;
+        const pz = player.pos.z + Math.cos(player.heading) * player.speed * lead;
+
+        let tx, tz, wantSpeed;
+        if (u.role === 'INTERCEPT' && i === 0) {
+          tx = px; tz = pz;
+          wantSpeed = Math.min(40, 15 + dist * 0.55);
+        } else if (u.role === 'BLOCK') {
+          // Get ahead of the player, then turn to face them and slow.
+          const aheadX = player.pos.x + Math.sin(player.heading) * 16;
+          const aheadZ = player.pos.z + Math.cos(player.heading) * 16;
+          const toAhead = Math.hypot(aheadX - u.pos.x, aheadZ - u.pos.z);
+          if (toAhead > 6) { tx = aheadX; tz = aheadZ; wantSpeed = Math.min(38, 14 + toAhead * 0.5); }
+          else { tx = player.pos.x; tz = player.pos.z; wantSpeed = 0; }
+        } else {
+          // PURSUE from a flank offset so units don't pile up.
+          const flank = (i % 2 === 0 ? 1 : -1) * 7;
+          const fx = -Math.cos(player.heading) * flank;
+          const fz = Math.sin(player.heading) * flank;
+          tx = player.pos.x + fx; tz = player.pos.z + fz;
+          wantSpeed = Math.min(39, 13 + dist * 0.5);
+        }
+        // Never slower than the player when far behind, never absurd up close.
+        if (dist > 45) wantSpeed = Math.max(wantSpeed, playerSpeed + 4);
+        if (dist < 9) wantSpeed = Math.min(wantSpeed, playerSpeed + 1.5);
+
+        const wantHeading = Math.atan2(tx - u.pos.x, tz - u.pos.z);
+        let dh = wantHeading - u.heading;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        const steerRate = 2.6;
+        u.heading += Math.max(-steerRate * dt, Math.min(steerRate * dt, dh));
+        u.speed += (wantSpeed - u.speed) * Math.min(1, dt * 1.8);
+        u.pos.x += Math.sin(u.heading) * u.speed * dt;
+        u.pos.z += Math.cos(u.heading) * u.speed * dt;
+        // Stay in the city.
+        u.pos.x = Math.max(-195, Math.min(160, u.pos.x));
+        u.pos.z = Math.max(-195, Math.min(195, u.pos.z));
+
+        u.group.position.copy(u.pos);
+        u.group.position.y = 0;
+        u.group.rotation.y = u.heading + Math.PI; // model front is -z
+        u.group.rotation.z = -Math.max(-0.1, Math.min(0.1, dh * 0.4));
+
+        // Strobes: alternate red / blue, ~7 Hz.
+        const on = Math.sin(t * 11 + u.phase * 6) > 0;
+        u.redMat.emissiveIntensity = on ? 4.5 : 0.25;
+        u.blueMat.emissiveIntensity = on ? 0.25 : 4.5;
+        u.strobe.color.setHex(on ? 0xff2020 : 0x2244ff);
+        u.strobe.intensity = 14 + Math.sin(t * 11 + u.phase * 6) * 6;
+      });
+    },
+    // Teleport units around the player (used by the shot director).
+    deployAround(playerPos, radius) {
+      const count = wantedCount();
+      units.forEach((u, i) => {
+        if (i >= count) return;
+        const a = (i / Math.max(1, count)) * Math.PI * 2 + 0.6;
+        u.pos.set(playerPos.x + Math.cos(a) * radius, 0, playerPos.z + Math.sin(a) * radius);
+        u.heading = Math.atan2(playerPos.x - u.pos.x, playerPos.z - u.pos.z);
+        u.speed = 14;
+      });
     },
   };
 }

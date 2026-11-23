@@ -1,121 +1,117 @@
-// Marina Nights — lighting & mood. ACES filmic tone mapping, exposure ~1.28,
-// real moon shadows (PCF soft, frustum follows the player), a moon halo,
-// and a cooler, higher-contrast night grade so the city reads like a real
-// place after rain: deep shadows, warm pools of lamp light, wet shine.
-// Also re-reads the ?shot= parameter from the URL whenever a shot is applied
-// (never a hard-coded shot number).
+// lighting.js — night lighting for Velmara Bay: real moon shadows that follow
+// the player, a haloed moon, two sizes of stars, fog and a contrast night grade.
 const THREE = window.THREE;
 
+function makeMoonTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const g = c.getContext('2d');
+  const halo = g.createRadialGradient(128, 128, 10, 128, 128, 128);
+  halo.addColorStop(0, 'rgba(235,242,255,1)');
+  halo.addColorStop(0.22, 'rgba(210,224,255,0.95)');
+  halo.addColorStop(0.35, 'rgba(160,185,240,0.28)');
+  halo.addColorStop(0.65, 'rgba(120,150,220,0.10)');
+  halo.addColorStop(1, 'rgba(120,150,220,0)');
+  g.fillStyle = halo;
+  g.fillRect(0, 0, 256, 256);
+  // craters on the disc
+  g.fillStyle = 'rgba(170,185,215,0.5)';
+  const craters = [[112, 108, 9], [140, 132, 6], [122, 142, 5], [146, 108, 4], [108, 130, 4]];
+  for (const [x, y, r] of craters) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeStarField(count, size, spread, yMin, yMax) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = spread * (0.35 + Math.random() * 0.65);
+    positions[i * 3] = Math.cos(a) * r;
+    positions[i * 3 + 1] = yMin + Math.random() * (yMax - yMin);
+    positions[i * 3 + 2] = Math.sin(a) * r;
+    const warm = Math.random() < 0.25;
+    const b = 0.55 + Math.random() * 0.45;
+    colors[i * 3] = warm ? b : b * 0.85;
+    colors[i * 3 + 1] = warm ? b * 0.85 : b * 0.92;
+    colors[i * 3 + 2] = warm ? b * 0.7 : b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size, sizeAttenuation: false, vertexColors: true,
+    transparent: true, opacity: 0.9, depthWrite: false, fog: false,
+  });
+  const pts = new THREE.Points(geo, mat);
+  pts.frustumCulled = false;
+  return pts;
+}
+
 export function createLighting(scene, renderer) {
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.28;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  // Real-time shadows: the moon is the only shadow caster, so the pass stays
-  // cheap even on SwiftShader. Palms/lamps skip shadows; buildings and cars
-  // cast, roads and ground receive.
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  scene.background = new THREE.Color(0x081426);
-  scene.fog = new THREE.Fog(0x081426, 200, 600);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.18;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  // Lower, cooler ambient than v9: night should have real dark, with the
-  // warmth coming from lamps and windows instead of a flat wash.
-  const ambient = new THREE.AmbientLight(0x6d84ad, 0.62);
-  scene.add(ambient);
+  scene.background = new THREE.Color(0x070b1a);
+  scene.fog = new THREE.FogExp2(0x0a1024, 0.0016);
 
-  const hemi = new THREE.HemisphereLight(0x8fb4e8, 0x1c2836, 0.8);
-  scene.add(hemi);
-
-  // Moon: strong cool directional light so streets and cars stay readable.
-  // Casts the scene's shadows; the shadow frustum rides along with the
-  // player (see update()).
-  const moon = new THREE.DirectionalLight(0xdfeaff, 1.6);
-  moon.position.set(120, 190, 70);
+  // Moon: the key light. Shadow camera frustum is re-centred on the player
+  // every frame so shadows stay crisp wherever you drive.
+  const moon = new THREE.DirectionalLight(0xbfd0ff, 2.1);
+  moon.position.set(-140, 220, -90);
   moon.castShadow = true;
-  moon.shadow.mapSize.set(1024, 1024);
+  moon.shadow.mapSize.set(2048, 2048);
+  moon.shadow.camera.near = 20;
+  moon.shadow.camera.far = 520;
   moon.shadow.camera.left = -95;
   moon.shadow.camera.right = 95;
   moon.shadow.camera.top = 95;
   moon.shadow.camera.bottom = -95;
-  moon.shadow.camera.near = 10;
-  moon.shadow.camera.far = 520;
   moon.shadow.bias = -0.0006;
+  moon.shadow.normalBias = 0.02;
   scene.add(moon);
   scene.add(moon.target);
 
-  // Warm marina glow from the east (bay side).
-  const bayGlow = new THREE.DirectionalLight(0xffc98a, 0.35);
-  bayGlow.position.set(220, 60, -40);
-  scene.add(bayGlow);
+  // Cool sky fill so shadowed faces never go pitch black.
+  const hemi = new THREE.HemisphereLight(0x2a3a66, 0x0b0d18, 0.95);
+  scene.add(hemi);
+  const ambient = new THREE.AmbientLight(0x1a2340, 0.75);
+  scene.add(ambient);
 
-  // The moon disc itself, high in the sky, plus a soft halo so it blooms
-  // against the night sky instead of looking like a flat sticker.
-  const moonDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(16, 32),
-    new THREE.MeshBasicMaterial({ color: 0xf4f8ff, fog: false })
-  );
-  moonDisc.position.set(-260, 240, -320);
-  moonDisc.lookAt(0, 0, 0);
-  scene.add(moonDisc);
-  const halo = new THREE.Mesh(
-    new THREE.CircleGeometry(30, 32),
-    new THREE.MeshBasicMaterial({
-      color: 0x9db8e8, fog: false, transparent: true, opacity: 0.16,
-    })
-  );
-  halo.position.copy(moonDisc.position).multiplyScalar(1.001);
-  halo.lookAt(0, 0, 0);
-  scene.add(halo);
+  // Moon disc + halo, hung low in the east over the sea.
+  const moonSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeMoonTexture(), transparent: true, depthWrite: false, fog: false,
+  }));
+  moonSprite.position.set(420, 190, -260);
+  moonSprite.scale.set(150, 150, 1);
+  scene.add(moonSprite);
 
-  // Stars: tiny bright points scattered overhead, two sizes so the sky
-  // has depth instead of uniform grain.
-  function makeStars(count, size, y0, y1) {
-    const geo = new THREE.BufferGeometry();
-    const pos = [];
-    for (let i = 0; i < count; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = 380 + Math.random() * 180;
-      pos.push(Math.cos(a) * r, y0 + Math.random() * (y1 - y0), Math.sin(a) * r);
-    }
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    const pts = new THREE.Points(geo, new THREE.PointsMaterial({
-      color: 0xcfe4ff, size, sizeAttenuation: false, fog: false,
-    }));
-    scene.add(pts);
-    return pts;
-  }
-  const stars = makeStars(300, 1.6, 150, 370);
-  const starsBright = makeStars(90, 2.6, 180, 360);
+  // Two star layers: many small pinpricks, fewer larger bright stars.
+  const starsSmall = makeStarField(700, 1.4, 700, 120, 520);
+  const starsBig = makeStarField(130, 2.6, 650, 140, 480);
+  scene.add(starsSmall);
+  scene.add(starsBig);
 
+  let twinkle = 0;
   return {
-    // Keep the moon's shadow frustum centred on the player so shadows stay
-    // crisp wherever the car drives (a fixed 190 m frustum would smear).
-    update(playerPos) {
-      if (!playerPos) return;
-      moon.position.set(playerPos.x + 120, 190, playerPos.z + 70);
+    moon,
+    update(dt, playerPos, timeSec) {
+      twinkle += dt;
+      // Shadow frustum tracks the player.
+      moon.position.set(playerPos.x - 140, 220, playerPos.z - 90);
       moon.target.position.set(playerPos.x, 0, playerPos.z);
       moon.target.updateMatrixWorld();
-    },
-    // Re-reads ?shot= from the live URL every time it is called.
-    applyShot() {
-      let n = 0;
-      try {
-        n = parseInt(new URLSearchParams(window.location.search).get('shot') || '0', 10) || 0;
-      } catch (e) { n = 0; }
-      if (n === 2) {
-        // Marina shot: slightly warmer, brighter promenade.
-        renderer.toneMappingExposure = 1.38;
-        bayGlow.intensity = 0.55;
-      } else if (n === 1) {
-        // Chase shot: punchier contrast.
-        renderer.toneMappingExposure = 1.32;
-      } else if (n === 4) {
-        renderer.toneMappingExposure = 1.34;
-      } else {
-        renderer.toneMappingExposure = 1.28;
-        bayGlow.intensity = 0.35;
-      }
-      return n;
+      // Gentle star twinkle.
+      starsBig.material.opacity = 0.72 + Math.sin(twinkle * 1.7) * 0.18;
+      starsSmall.material.opacity = 0.8 + Math.sin(twinkle * 2.3 + 1.4) * 0.12;
+      // Moon halo breathes almost imperceptibly.
+      const s = 150 + Math.sin(timeSec * 0.11) * 2.5;
+      moonSprite.scale.set(s, s, 1);
     },
   };
 }

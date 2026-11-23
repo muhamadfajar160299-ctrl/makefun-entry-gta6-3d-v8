@@ -1,155 +1,140 @@
-// Marina Nights — 5 sequential missions. Each has a name, briefing,
-// world target (gold beacon + minimap dot) and a cash reward. Progress is
-// saved to localStorage. Completing a mission pays out, clears wanted and
-// opens the win screen via showScreen('win') — by KEY, never by DOM id.
+// missions.js — five jobs across Velmara Bay. Each mission plants a floating
+// gold diamond and a beam of light on its target, tracks live distance, and
+// pays out on arrival. Completing one rolls straight into the next.
 const THREE = window.THREE;
-const SAVE_KEY = 'marina-nights-save-v1';
 
-export const MISSIONS = [
+export const MISSION_LIST = [
   {
-    name: 'Marina Pickup',
+    id: 1, name: 'MARINA PICKUP', reward: 400,
     desc: 'Drive to the marina promenade and pick up the package.',
-    target: { x: 194, z: 0 }, reward: 400, wanted: 0,
+    target: { x: 150, z: -12 },
+    done: 'Package secured. Clean getaway. The next job is already lined up.',
   },
   {
-    name: 'Downtown Drop',
-    desc: 'Deliver the package to the downtown tower on the west side.',
-    target: { x: -160, z: 80 }, reward: 600, wanted: 0,
+    id: 2, name: 'NORTH DOCK DROP', reward: 550,
+    desc: 'Take the package to the north docks. No stops, no witnesses.',
+    target: { x: 110, z: -165 },
+    done: 'Drop made at the north docks. The fixer is pleased — for now.',
   },
   {
-    name: 'Harbor Escape',
-    desc: 'The cops are onto you. Lose the heat and reach the north docks.',
-    target: { x: 80, z: -160 }, reward: 800, wanted: 2,
+    id: 3, name: 'ROOFTOP MEET', reward: 700,
+    desc: 'Meet the contact at the west plaza. The PD is watching that block.',
+    target: { x: -165, z: 55 },
+    done: 'The contact paid in full. Word travels fast on the bay.',
   },
   {
-    name: 'Night Courier',
-    desc: 'Cross town to the south-east corner. Fast, quiet, no mistakes.',
-    target: { x: 160, z: 160 }, reward: 1000, wanted: 1,
+    id: 4, name: 'SOUTH PIER RUN', reward: 850,
+    desc: 'Race the south pier before the tide turns. The buyer hates waiting.',
+    target: { x: 110, z: 165 },
+    done: 'Delivered with seconds to spare. The buyer paid a bonus for speed.',
   },
   {
-    name: 'Velmaras Grand Finale',
-    desc: 'One last run: the whole department is after you. Reach the marina.',
-    target: { x: 194, z: -120 }, reward: 1500, wanted: 3,
+    id: 5, name: 'THE BIG SCORE', reward: 1500,
+    desc: 'One last run: the casino vault drop on the east strip. Bring it home.',
+    target: { x: 0, z: 0 },
+    done: 'The big score is yours. Velmara Bay is your city now.',
   },
 ];
 
-export function createMissions(scene, G) {
-  let saved = { mission: 0, money: 0 };
-  try {
-    const raw = window.localStorage.getItem(SAVE_KEY);
-    if (raw) {
-      const p = JSON.parse(raw);
-      if (typeof p.mission === 'number') saved.mission = Math.max(0, Math.min(4, p.mission));
-      if (typeof p.money === 'number') saved.money = Math.max(0, p.money);
-    }
-  } catch (e) { /* storage unavailable: start fresh */ }
-
-  let index = saved.mission;
-  G.state.money = saved.money;
-
-  // gold beacon at the active target
-  const beaconMat = new THREE.MeshBasicMaterial({
-    color: 0xffd54a, transparent: true, opacity: 0.5, side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 46, 20, 1, true), beaconMat);
-  beacon.position.y = 23;
-  scene.add(beacon);
-  const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 5.2, 32),
-    new THREE.MeshBasicMaterial({ color: 0xffd54a, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.12;
-  scene.add(ring);
-  const beaconLight = new THREE.PointLight(0xffd54a, 30, 42, 1.8);
-  beaconLight.position.y = 6;
-  scene.add(beaconLight);
-  // floating diamond marker above the target: spins and bobs so the objective
-  // reads from any angle, even when the light pillar is behind a building.
-  const marker = new THREE.Mesh(
-    new THREE.OctahedronGeometry(1.6),
-    new THREE.MeshStandardMaterial({
-      color: 0xffd54a, emissive: 0xffb300, emissiveIntensity: 1.2,
-      roughness: 0.2, metalness: 0.6,
-    })
+export function createMissions(scene) {
+  // Floating gold diamond.
+  const diamond = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.5),
+    new THREE.MeshStandardMaterial({ color: 0x332200, emissive: 0xf6c945, emissiveIntensity: 2.6, roughness: 0.2, metalness: 0.8 }),
   );
-  marker.position.y = 12;
-  scene.add(marker);
+  diamond.castShadow = false;
+  scene.add(diamond);
+  // Vertical beam of light marking the target from the sky.
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0xf6c945, transparent: true, opacity: 0.16,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.4, 60, 16, 1, true), beamMat);
+  beam.position.y = 30;
+  scene.add(beam);
+  // Ground ring at the target.
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(2.2, 3.0, 32),
+    new THREE.MeshBasicMaterial({ color: 0xf6c945, transparent: true, opacity: 0.75, side: THREE.DoubleSide }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.08;
+  scene.add(ring);
 
-  function save() {
-    try {
-      window.localStorage.setItem(SAVE_KEY, JSON.stringify({ mission: index, money: G.state.money }));
-    } catch (e) {}
+  let index = 0;
+  let completed = false;
+  let completeTimer = 0;
+
+  function placeMarker(m) {
+    diamond.position.set(m.target.x, 4.5, m.target.z);
+    beam.position.set(m.target.x, 30, m.target.z);
+    ring.position.set(m.target.x, 0.08, m.target.z);
+    diamond.visible = true;
+    beam.visible = true;
+    ring.visible = true;
   }
+  placeMarker(MISSION_LIST[0]);
 
-  function current() { return MISSIONS[index]; }
-
-  function placeBeacon() {
-    const t = current().target;
-    beacon.position.x = t.x;
-    beacon.position.z = t.z;
-    ring.position.x = t.x;
-    ring.position.z = t.z;
-    beaconLight.position.x = t.x;
-    beaconLight.position.z = t.z;
-    marker.position.x = t.x;
-    marker.position.z = t.z;
-  }
-
-  function start(i) {
-    index = Math.max(0, Math.min(MISSIONS.length - 1, i));
-    const m = current();
-    G.hud.setObjective('MISSION ' + (index + 1) + ' — ' + m.name.toUpperCase(), m.desc);
-    G.setWanted(m.wanted || 0);
-    placeBeacon();
-    save();
-  }
-
-  function complete() {
-    const m = current();
-    G.state.money += m.reward;
-    G.setWanted(0);
-    G.audio.pickup();
-    G.audio.win();
-    G.hud.setMoney(G.state.money);
-    const last = index >= MISSIONS.length - 1;
-    if (!last) index += 1;
-    G.state.completedMissions = (G.state.completedMissions || 0) + 1;
-    save();
-    // Win screen by KEY 'win' (hud maps keys to elements).
-    G.hud.setWinText(m.name, m.reward, last);
-    G.state.missionComplete = true;
-    G.hud.showScreen('win');
-    if (!last) {
-      // prime the next mission so CONTINUE drops the player straight in
-      G.pendingNext = true;
-    } else {
-      G.state.allComplete = true;
-    }
-  }
-
-  function next() {
-    G.state.missionComplete = false;
-    start(index);
-    G.player.reset(0, -120, 0);
-  }
-
-  function update(dt, t) {
-    beaconMat.opacity = 0.35 + Math.sin(t * 3) * 0.15;
-    const s = 1 + Math.sin(t * 3) * 0.12;
-    ring.scale.set(s, s, 1);
-    marker.rotation.y += dt * 1.4;
-    marker.position.y = 12 + Math.sin(t * 2) * 0.8;
-    if (!G.state.started || G.state.paused || G.state.over || G.state.missionComplete) return;
-    const m = current();
-    const dx = G.player.pos.x - m.target.x;
-    const dz = G.player.pos.z - m.target.z;
-    // live distance readout under the objective card
-    if (G.hud.setObjectiveDistance) {
-      G.hud.setObjectiveDistance(Math.round(Math.hypot(dx, dz)));
-    }
-    if (dx * dx + dz * dz < 64) complete();
-  }
-
-  placeBeacon();
-  return { current, start, complete, next, update, get index() { return index; } };
+  return {
+    get current() { return MISSION_LIST[index]; },
+    get index() { return index; },
+    get isComplete() { return completed; },
+    setIndex(i) {
+      index = Math.max(0, Math.min(MISSION_LIST.length - 1, i));
+      completed = false;
+      completeTimer = 0;
+      placeMarker(MISSION_LIST[index]);
+    },
+    distanceTo(playerPos) {
+      const m = MISSION_LIST[index];
+      return Math.hypot(m.target.x - playerPos.x, m.target.z - playerPos.z);
+    },
+    targetPos() {
+      const m = MISSION_LIST[index];
+      return { x: m.target.x, z: m.target.z };
+    },
+    update(dt, playerPos, t) {
+      // Spin + bob the diamond; pulse the beam and ring.
+      diamond.rotation.y = t * 1.6;
+      diamond.position.y = 4.5 + Math.sin(t * 2.2) * 0.5;
+      beamMat.opacity = 0.12 + Math.sin(t * 2.2) * 0.05;
+      const pulse = 1 + Math.sin(t * 3) * 0.08;
+      ring.scale.set(pulse, pulse, 1);
+      if (completed) {
+        completeTimer += dt;
+        return null;
+      }
+      const d = this.distanceTo(playerPos);
+      if (d < 7) {
+        completed = true;
+        completeTimer = 0;
+        diamond.visible = false;
+        beam.visible = false;
+        ring.visible = false;
+        return MISSION_LIST[index];
+      }
+      return null;
+    },
+    advance() {
+      if (index < MISSION_LIST.length - 1) {
+        index += 1;
+        completed = false;
+        completeTimer = 0;
+        placeMarker(MISSION_LIST[index]);
+        return MISSION_LIST[index];
+      }
+      // All five done: loop back to the first job, the city never sleeps.
+      index = 0;
+      completed = false;
+      completeTimer = 0;
+      placeMarker(MISSION_LIST[0]);
+      return MISSION_LIST[0];
+    },
+    hideMarker() {
+      diamond.visible = false;
+      beam.visible = false;
+      ring.visible = false;
+    },
+    showMarker() { placeMarker(MISSION_LIST[index]); },
+  };
 }
