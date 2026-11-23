@@ -1,1 +1,1 @@
-{"name":"velmara-marina-nights-r18","private":true,"type":"module","version":"18.0.0"}
+{"description":"VELMARA — Bayfront Getaway, an open-world crime game for make.fun gta6-01","license":"MIT","name":"velmara","private":true,"scripts":{"build":"node main.ts","shots":"node capture-shots.mjs"},"type":"module","version":"1.0.0"}

@@ -1,107 +1,132 @@
-// shots.js — deterministic staging for the four screenshots.
-//
-// The capture tool calls applyShot(n) and then reads getShotState() to
-// verify the frame shows what the dossier claims. Positions are fixed so
-// every capture run stages the same scene.
-import { setWanted } from './police.js';
-import { syncGear } from './player.js';
+// VELMARA screenshot scenarios — ?shot=1..4 drops the game straight
+// into a staged moment so the capture script can shoot it. Each one
+// sets the hero, the traffic, the police and the HUD to fixed values,
+// freezes the police AI, and skips the start screen.
+(function () {
+  var G = (window.G = window.G || {});
 
-// Traffic is repositioned onto far lanes for every shot, so a staged
-// hero never rear-ends a random car (which would kill the staged speed).
-function placeTraffic(game, lanes) {
-  game.traffic.forEach((c, i) => {
-    const lane = lanes[i % lanes.length];
-    c.x = lane + 3.5;
-    c.z = -110 + i * 22;
-    c.heading = 0;
-    c.speed = c.targetSpeed;
-    c.turnAt = null;
-    c.signal = 0;
-    c.braking = false;
-  });
-}
+  var Shots = {
+    id: 0,
+    cameraMode: "chase",
 
-export function applyShot(game, n) {
-  const p = game.player;
-  const cam = game.cameraRig;
-  game.state = 'playing';
-  game.stagingHold = true; // freeze staged speeds so the shot reads exactly
-  game.hud.hideStart();
-  game.hud.hidePause();
-  game.hud.hideComplete();
-  game.paused = false;
+    read: function () {
+      try {
+        var q = new URLSearchParams(window.location.search);
+        var n = parseInt(q.get("shot") || "0", 10);
+        this.id = isNaN(n) ? 0 : n;
+      } catch (err) {
+        this.id = 0;
+      }
+      return this.id;
+    },
 
-  if (n === 1) {
-    // Chase: wanted 3, 72 km/h in 3rd gear, 4 police cars active.
-    p.reset(0, 60, 0);
-    p.speed = 20; // 72 km/h
-    game.wanted = 3;
-    setWanted(game.police, 3, p);
-    // Flankers close in, converging on the player; the blocker waits ahead.
-    game.police[0].x = 12; game.police[0].z = 42;
-    game.police[0].heading = 0.35; game.police[0].speed = 21;
-    game.police[1].x = -12; game.police[1].z = 44;
-    game.police[1].heading = -0.35; game.police[1].speed = 21;
-    game.police[2].x = 3; game.police[2].z = 18;
-    game.police[2].heading = 0; game.police[2].speed = 22;
-    game.police[3].x = -5; game.police[3].z = 88;
-    game.police[3].heading = 0; game.police[3].speed = 19;
-    placeTraffic(game, [50, -50]);
-    game.missions.start(0, p);
-    game.cash = 0;
-    cam.snapBehind(p);
-  } else if (n === 2) {
-    // Marina: parked at the promenade, objective diamond 9 m ahead (east).
-    p.reset(131, 20, Math.PI / 2);
-    p.speed = 0;
-    game.wanted = 0;
-    setWanted(game.police, 0, p);
-    game.missions.start(0, p);
-    game.missions.current.target = { x: 140, z: 20 };
-    game.missions.marker.position.set(140, 0, 20);
-    placeTraffic(game, [100, -100]);
-    game.cash = 0;
-    cam.snapOrbit(p, 14, 5.5);
-  } else if (n === 3) {
-    // Top speed: 130 km/h in 5th gear down the long 5th Avenue straight.
-    p.reset(50, 110, 0);
-    p.speed = 36.1; // 130 km/h
-    game.wanted = 1;
-    setWanted(game.police, 1, p);
-    game.police[0].x = 58; game.police[0].z = 78;
-    game.police[0].heading = 0; game.police[0].speed = 30;
-    placeTraffic(game, [0, -100]);
-    game.missions.start(0, p);
-    game.cash = 0;
-    cam.snapBehind(p);
-  } else if (n === 4) {
-    // Mission complete: $400 banked, overlay up, marina behind it.
-    p.reset(131, 20, Math.PI / 2);
-    p.speed = 0;
-    game.wanted = 0;
-    setWanted(game.police, 0, p);
-    game.missions.start(0, p);
-    game.cash = 400;
-    game.state = 'complete';
-    placeTraffic(game, [100, -100]);
-    game.hud.showComplete(game.missions.current);
-    cam.snapOrbit(p, 14, 5.5);
-  }
-  // Gear + rpm from the staged speed, right now — not on the next frame.
-  syncGear(p);
-  game.hud.update(game, 0);
-}
+    // Called after the world is built, before the first frame.
+    apply: function (state) {
+      var id = this.id;
+      if (!id) return false;
+      var hero = G.player;
+      G.police.frozen = true;
+      state.started = true;
+      state.paused = false;
+      G.hud.hideStart();
 
-export function getShotState(game) {
-  const p = game.player;
-  return {
-    wanted: game.wanted,
-    speedKmh: Math.round(Math.abs(p.speed) * 3.6),
-    gear: p.reversing ? 'R' : p.gear === 0 ? 'N' : p.gear,
-    policeActive: game.police.filter((c) => c.active).length,
-    cash: game.cash,
-    distanceToObjective: Math.round(game.missions.distanceTo(p)),
-    mission: game.missions.current ? game.missions.current.name : null,
-    state: game.state,
+      if (id === 1) {
+        // Police chase: hero on the 0-street at 72 km/h in 3rd, three
+        // white interceptors around it, wanted 3, zebra dead ahead.
+        this.cameraMode = "chase";
+        hero.reset(0, 18, Math.PI);
+        hero.speed = 20; // 72 km/h
+        state.wanted = 3;
+        state.cash = 0;
+        G.police.setWanted(3);
+        var spots = [
+          { x: -5.5, z: 2, h: Math.PI },
+          { x: 5.5, z: 4, h: Math.PI },
+          { x: 0, z: -8, h: 0 }
+        ];
+        G.police.units.forEach(function (u, i) {
+          u.group.position.set(spots[i].x, 0, spots[i].z);
+          u.heading = spots[i].h;
+          u.group.rotation.y = spots[i].h;
+          u.speed = 20;
+        });
+        G.missions.setIndex(0);
+      } else if (id === 2) {
+        // Marina: hero parked by the promenade, gold diamond 9 m away,
+        // yachts and water behind, palms and a red cafe umbrella close.
+        this.cameraMode = "marina";
+        hero.reset(105, -52, 2.82);
+        hero.speed = 0;
+        state.wanted = 0;
+        state.cash = 0;
+        G.police.setWanted(0);
+        G.missions.setIndex(0);
+      } else if (id === 3) {
+        // Flat out: 130 km/h in 5th down a tower canyon, a white taxi
+        // ahead in the same lane.
+        this.cameraMode = "chase";
+        hero.reset(0, 44, Math.PI);
+        hero.speed = 36.1; // 130 km/h
+        state.wanted = 1;
+        state.cash = 0;
+        G.police.setWanted(1);
+        var taxi = null;
+        for (var i = 0; i < G.vehicles.cars.length; i++) {
+          var c = G.vehicles.cars[i];
+          if (!c.group.userData.taxi) continue;
+          taxi = c;
+          break;
+        }
+        if (taxi) {
+          taxi.alongX = false;
+          taxi.street = 0;
+          taxi.dir = -1;
+          taxi.s = 8;
+          taxi.speed = 11;
+          taxi.heading = Math.PI;
+          taxi.group.rotation.y = Math.PI;
+          taxi.group.position.set(3, 0, 8);
+        }
+        G.missions.setIndex(0);
+      } else if (id === 4) {
+        // Mission complete: the overlay over a bright marina, +$400.
+        this.cameraMode = "marina";
+        hero.reset(105, -52, 2.82);
+        hero.speed = 0;
+        state.wanted = 0;
+        state.cash = 400;
+        G.police.setWanted(0);
+        G.missions.setIndex(0);
+        G.missions.done = true;
+        if (G.missions.marker) G.missions.marker.visible = true;
+        var job = G.missions.current();
+        G.hud.showComplete(job);
+      }
+      return true;
+    },
+
+    // Camera for the staged shots. Chase follows the hero; marina uses
+    // a high side angle so the diamond, yachts and cafes all read.
+    updateCamera: function (camera, hero, dt) {
+      if (this.cameraMode === "marina") {
+        var f = hero.forward();
+        var tx = hero.pos.x + f.x * 6;
+        var tz = hero.pos.z + f.z * 6;
+        camera.position.set(
+          hero.pos.x - f.x * 10 + 13,
+          8.5,
+          hero.pos.z - f.z * 10 + 9
+        );
+        camera.lookAt(tx, 1.6, tz);
+        return;
+      }
+      var b = hero.forward();
+      var cx = hero.pos.x - b.x * 9.5;
+      var cz = hero.pos.z - b.z * 9.5;
+      camera.position.set(cx, 4.4, cz);
+      camera.lookAt(hero.pos.x + b.x * 7, 1.4, hero.pos.z + b.z * 7);
+    }
   };
-}
+
+  G.shots = Shots;
+})();

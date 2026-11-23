@@ -3,145 +3,172 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VELMARA — Marina Nights</title>
+<title>VELMARA — Bayfront Getaway</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1428;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eef2f8; }
-  #app { position: fixed; inset: 0; }
-  #game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  .hud { position: absolute; pointer-events: none; user-select: none; }
-  .panel { background: rgba(8, 14, 30, 0.62); border: 1px solid rgba(255, 214, 120, 0.28);
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1026;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: #fff; }
+  #game-root { position: fixed; inset: 0; }
+  #game-root canvas { display: block; }
+  .panel { position: fixed; background: rgba(10, 16, 34, 0.72); border: 1px solid rgba(255,255,255,0.16);
     border-radius: 10px; backdrop-filter: blur(2px); }
-  /* cash */
-  #cash-box { top: 16px; left: 18px; padding: 6px 14px 8px; }
-  #cash-box .label { font-size: 10px; letter-spacing: 4px; color: #9fb2cc; }
-  #cash { font-size: 30px; font-weight: 800; color: #ffd76a; line-height: 1; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
-  /* wanted */
-  #wanted-box { top: 14px; left: 50%; transform: translateX(-50%); text-align: center; padding: 6px 18px 8px; }
-  #stars { font-size: 22px; letter-spacing: 4px; line-height: 1; color: #ffd76a;
-    text-shadow: 0 0 12px rgba(255, 190, 60, .8); }
-  #stars .off { color: rgba(255,255,255,.22); text-shadow: none; }
-  #wanted-box .label { font-size: 10px; letter-spacing: 5px; color: #c8d4e6; margin-top: 2px; }
-  #damage-wrap { width: 190px; height: 5px; background: rgba(255,255,255,.14); border-radius: 3px;
-    margin-top: 7px; overflow: hidden; }
-  #damage-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #ffb03a, #ff4d4d); }
-  #damage-label { font-size: 9px; letter-spacing: 3px; color: #9fb2cc; margin-top: 3px; }
-  /* clock */
-  #clock-box { top: 16px; right: 18px; font-size: 15px; font-weight: 700; letter-spacing: 2px;
-    color: #eaf1fb; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
-  /* mission */
-  #mission-box { top: 96px; left: 18px; width: 330px; padding: 12px 14px; border-left: 4px solid #ffd76a; }
-  #mission-title { font-size: 12px; font-weight: 800; letter-spacing: 3px; color: #ffd76a; }
-  #mission-text { font-size: 14px; line-height: 1.45; color: #e8eef7; margin-top: 5px; }
-  #mission-dist { font-size: 13px; font-weight: 700; color: #8fd8ff; margin-top: 7px; }
-  /* minimap */
-  #map-wrap { left: 18px; bottom: 16px; }
-  #map-wrap .label { font-size: 10px; letter-spacing: 4px; color: #9fb2cc; margin-bottom: 4px;
-    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
-  #minimap { display: block; width: 216px; height: 216px; border-radius: 8px;
-    border: 2px solid rgba(255, 214, 120, .55); background: #0d1830;
-    box-shadow: 0 4px 24px rgba(0,0,0,.5); }
-  /* speed */
-  #speed-box { right: 18px; bottom: 16px; text-align: right; }
-  #speed { font-size: 56px; font-weight: 800; line-height: .95; color: #fff;
-    text-shadow: 0 2px 14px rgba(0,0,0,.75); }
-  #speed-unit { font-size: 12px; letter-spacing: 3px; color: #ffd76a; font-weight: 700; }
-  #gear-box { display: inline-block; margin-top: 6px; padding: 3px 12px; border: 2px solid #ffd76a;
-    border-radius: 6px; font-size: 18px; font-weight: 800; color: #ffd76a;
-    background: rgba(8,14,30,.6); }
-  #controls-hint { margin-top: 10px; font-size: 11px; line-height: 1.7; letter-spacing: 1px;
-    color: rgba(230, 238, 250, .85); text-shadow: 0 1px 6px rgba(0,0,0,.8); }
-  /* toast */
-  #toast { left: 50%; top: 22%; transform: translateX(-50%); padding: 10px 22px; font-size: 15px;
-    font-weight: 700; letter-spacing: 1px; color: #ffe9a8; opacity: 0; transition: opacity .3s; }
-  /* overlays */
-  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; text-align: center; pointer-events: auto; }
-  #start-screen { background: radial-gradient(ellipse at 50% 38%, rgba(20, 38, 74, .42), rgba(4, 8, 20, .82)); }
-  #start-screen h1 { font-size: 74px; font-weight: 900; letter-spacing: 14px; color: #ffd76a;
-    text-shadow: 0 0 34px rgba(255, 190, 60, .55), 0 4px 18px rgba(0,0,0,.8); }
-  #start-screen h2 { font-size: 20px; letter-spacing: 10px; color: #8fd8ff; margin-top: 6px; }
-  #start-screen p { max-width: 560px; margin-top: 18px; font-size: 15px; line-height: 1.65; color: #dbe5f2; }
-  #start-btn, #next-btn, #resume-btn { margin-top: 26px; padding: 14px 42px; font-size: 16px; font-weight: 800;
-    letter-spacing: 4px; color: #1a1206; background: linear-gradient(180deg, #ffe27a, #f5b81e);
-    border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 6px 30px rgba(245, 184, 30, .45); }
-  #start-btn:hover, #next-btn:hover, #resume-btn:hover { filter: brightness(1.1); }
-  #start-controls { margin-top: 22px; font-size: 13px; line-height: 2; letter-spacing: 1px; color: #b9c7dc; }
-  #pause-screen { background: rgba(4, 8, 20, .72); }
-  #complete-screen { background: rgba(4, 8, 20, .55); }
-  #pause-screen h1 { font-size: 44px; letter-spacing: 10px; color: #fff; }
-  #complete-screen h1 { font-size: 58px; letter-spacing: 10px; color: #ffd76a;
-    text-shadow: 0 0 30px rgba(255, 190, 60, .6); }
-  #complete-screen h2 { font-size: 15px; letter-spacing: 7px; color: #8fd8ff; margin-top: 10px; }
-  #complete-screen p { margin-top: 14px; font-size: 15px; color: #dbe5f2; }
-  #complete-cash { margin-top: 10px; font-size: 34px; font-weight: 800; color: #4ade80; }
-  .hidden { display: none !important; }
-  #vignette { position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse at center, transparent 62%, rgba(2, 6, 18, .28) 100%); }
+  /* Cash, top left */
+  #hud-cash-box { top: 16px; left: 16px; padding: 8px 16px 10px; }
+  #hud-cash-box .label { font-size: 11px; letter-spacing: 3px; color: #9fb0cc; }
+  #hud-cash { font-size: 30px; font-weight: 800; color: #ffd75e; line-height: 1; }
+  /* Wanted, top centre */
+  #hud-wanted-box { top: 16px; left: 50%; transform: translateX(-50%); padding: 8px 22px 9px;
+    text-align: center; min-width: 250px; }
+  #hud-wanted .stars { color: #ffd75e; font-size: 20px; letter-spacing: 4px; }
+  #hud-wanted { font-size: 12px; letter-spacing: 4px; color: #cfd6de; }
+  #hud-damage-bar { height: 5px; background: rgba(255,255,255,0.18); border-radius: 3px; margin-top: 6px; }
+  #hud-damage-fill { height: 100%; width: 0%; background: #ff5a4a; border-radius: 3px; }
+  #hud-wanted-box .dmg-label { font-size: 10px; letter-spacing: 3px; color: #9fb0cc; margin-top: 3px; }
+  /* Clock, top right */
+  #hud-clock { position: fixed; top: 18px; right: 20px; font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
+  /* Mission panel, left */
+  #hud-mission { top: 108px; left: 16px; padding: 14px 16px; width: 300px; border-left: 4px solid #ffd75e; }
+  #hud-mission-title { font-size: 14px; font-weight: 800; letter-spacing: 2px; color: #ffd75e; }
+  #hud-mission-desc { font-size: 14px; line-height: 1.45; margin-top: 6px; color: #e8ecf2; }
+  #hud-mission-dist { font-size: 13px; font-weight: 700; color: #7cc4ff; margin-top: 8px; }
+  /* Minimap, bottom left */
+  #hud-map-wrap { position: fixed; bottom: 16px; left: 16px; }
+  #hud-map-wrap .map-label { font-size: 11px; letter-spacing: 4px; color: #9fb0cc; margin-bottom: 5px;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+  #hud-minimap { display: block; width: 190px; height: 190px; border: 2px solid rgba(255,215,94,0.55);
+    border-radius: 8px; background: #141c2e; }
+  /* Speed, bottom right */
+  #hud-speed-box { position: fixed; bottom: 16px; right: 20px; text-align: right; }
+  #hud-speed { font-size: 58px; font-weight: 800; line-height: 0.95; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  #hud-gear-row { margin-top: 4px; }
+  #hud-gear-row .unit { font-size: 13px; font-weight: 700; letter-spacing: 2px; color: #ffd75e; }
+  #hud-gear { display: inline-block; min-width: 34px; padding: 3px 0; text-align: center; font-size: 18px;
+    font-weight: 800; color: #ffd75e; border: 2px solid #ffd75e; border-radius: 6px; margin-left: 8px; }
+  #hud-hint { margin-top: 12px; font-size: 12px; letter-spacing: 1px; line-height: 1.7; color: #c8d2e2;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+  /* Toast */
+  #hud-toast { position: fixed; bottom: 230px; left: 50%; transform: translateX(-50%);
+    background: rgba(10,16,34,0.85); border: 1px solid rgba(255,215,94,0.5); color: #ffe9a8;
+    padding: 9px 18px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity 0.4s;
+    pointer-events: none; }
+  /* Full-screen overlays */
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; z-index: 10; }
+  #hud-start { background: linear-gradient(180deg, rgba(7,10,26,0.55) 0%, rgba(7,10,26,0.82) 100%); }
+  #hud-start h1 { font-size: 74px; font-weight: 900; letter-spacing: 14px; color: #ffd75e;
+    text-shadow: 0 0 34px rgba(255,183,0,0.55), 0 4px 0 rgba(0,0,0,0.35); }
+  #hud-start h2 { font-size: 17px; letter-spacing: 6px; color: #cfe0ff; margin-top: 6px; }
+  #hud-start p { max-width: 560px; font-size: 15px; line-height: 1.6; color: #dfe6f2; margin-top: 18px; }
+  .controls-table { margin-top: 22px; border-collapse: collapse; font-size: 14px; }
+  .controls-table td { padding: 5px 16px; text-align: left; color: #dfe6f2; }
+  .controls-table td:first-child { color: #ffd75e; font-weight: 700; letter-spacing: 1px; }
+  .big-btn { margin-top: 26px; padding: 14px 44px; font-size: 17px; font-weight: 800; letter-spacing: 3px;
+    color: #1a1200; background: #ffd75e; border: none; border-radius: 10px; cursor: pointer; }
+  .big-btn:hover { background: #ffe08a; }
+  .ghost-btn { margin-top: 12px; padding: 10px 28px; font-size: 14px; font-weight: 700; letter-spacing: 2px;
+    color: #ffd75e; background: transparent; border: 2px solid #ffd75e; border-radius: 10px; cursor: pointer; }
+  #hud-save-note { margin-top: 16px; font-size: 13px; color: #9fb0cc; }
+  #hud-overlay { background: rgba(7,10,26,0.45); display: none; }
+  #hud-overlay-title { font-size: 62px; font-weight: 900; letter-spacing: 10px; color: #ffd75e;
+    text-shadow: 0 0 30px rgba(255,183,0,0.6); }
+  #hud-overlay-sub { font-size: 16px; letter-spacing: 4px; color: #9fd0ff; margin-top: 10px; }
+  #hud-overlay-desc { font-size: 15px; color: #e8ecf2; margin-top: 14px; }
+  #hud-overlay-reward { font-size: 34px; font-weight: 800; color: #3ddc78; margin-top: 16px; }
+  #hud-pause { background: rgba(7,10,26,0.7); display: none; }
+  #hud-pause h1 { font-size: 46px; letter-spacing: 8px; color: #fff; }
+  #hud-pause p { color: #c8d2e2; margin-top: 10px; font-size: 14px; }
+  #hud-bust { background: rgba(20,4,4,0.72); display: none; z-index: 11; }
+  #hud-bust h1 { font-size: 56px; letter-spacing: 10px; color: #ff5a4a; }
+  #hud-bust p { color: #ffd9d4; margin-top: 10px; font-size: 15px; }
 </style>
 </head>
 <body>
-<div id="app">
-  <canvas id="game-canvas"></canvas>
-  <div id="vignette"></div>
+<div id="game-root"></div>
 
-  <div id="cash-box" class="hud panel"><div class="label">CASH</div><div id="cash">$0</div></div>
-
-  <div id="wanted-box" class="hud panel">
-    <div id="stars"></div>
-    <div class="label">WANTED</div>
-    <div id="damage-wrap"><div id="damage-bar"></div></div>
-    <div id="damage-label">VEHICLE DAMAGE</div>
-  </div>
-
-  <div id="clock-box" class="hud"><span id="clock">21:36</span> &middot; NIGHT</div>
-
-  <div id="mission-box" class="hud panel">
-    <div id="mission-title">MISSION 1 &mdash; MARINA PICKUP</div>
-    <div id="mission-text">Drive to the marina promenade and pick up the package.</div>
-    <div id="mission-dist">194 m to objective</div>
-  </div>
-
-  <div id="map-wrap" class="hud">
-    <div class="label">VELMARA BAY</div>
-    <canvas id="minimap" width="216" height="216"></canvas>
-  </div>
-
-  <div id="speed-box" class="hud">
-    <div><span id="speed">0</span></div>
-    <div><span id="speed-unit">KM/H</span> <span id="gear-box">N</span></div>
-    <div id="controls-hint">WASD / ARROWS &mdash; DRIVE<br>SPACE &mdash; BRAKE &nbsp;&middot;&nbsp; P &mdash; PAUSE<br>R &mdash; RESTART MISSION</div>
-  </div>
-
-  <div id="toast" class="hud panel"></div>
-
-  <div id="start-screen" class="overlay">
-    <h1>VELMARA</h1>
-    <h2>MARINA NIGHTS</h2>
-    <p>An open-world night drive through Velmara Bay. Take the jobs, outrun the
-       Velmara PD, and own the marina &mdash; one glowing mile at a time.</p>
-    <button id="start-btn">START ENGINE</button>
-    <div id="start-controls">WASD / ARROWS &mdash; drive &nbsp;&middot;&nbsp; SPACE &mdash; brake &nbsp;&middot;&nbsp; P &mdash; pause<br>
-      M &mdash; mute &nbsp;&middot;&nbsp; R &mdash; restart mission &nbsp;&middot;&nbsp; 5 missions &mdash; $400 each</div>
-  </div>
-
-  <div id="pause-screen" class="overlay hidden">
-    <h1>PAUSED</h1>
-    <p style="margin-top:12px;color:#b9c7dc">Take a breath. The marina will wait.</p>
-    <button id="resume-btn">RESUME</button>
-  </div>
-
-  <div id="complete-screen" class="overlay hidden">
-    <h1>MISSION COMPLETE</h1>
-    <h2 id="complete-name">MISSION &mdash; MARINA PICKUP</h2>
-    <p id="complete-flavor">Package secured. Clean getaway. The next job is already lined up.</p>
-    <div id="complete-cash">+$400</div>
-    <button id="next-btn">NEXT MISSION</button>
-  </div>
+<div id="hud-cash-box" class="panel">
+  <div class="label">CASH</div>
+  <div id="hud-cash">$0</div>
 </div>
 
-<script src="./vendor/three.min.js"></script>
-<script type="module" src="./src/main.js"></script>
+<div id="hud-wanted-box" class="panel">
+  <div id="hud-wanted"><span class="stars">☆☆☆☆☆</span> WANTED</div>
+  <div id="hud-damage-bar"><div id="hud-damage-fill"></div></div>
+  <div class="dmg-label">VEHICLE DAMAGE</div>
+</div>
+
+<div id="hud-clock">21:36 · NIGHT</div>
+
+<div id="hud-mission" class="panel">
+  <div id="hud-mission-title">MISSION 1 — MARINA PICKUP</div>
+  <div id="hud-mission-desc">Drive to the marina promenade and pick up the package.</div>
+  <div id="hud-mission-dist">145 m to objective</div>
+</div>
+
+<div id="hud-map-wrap">
+  <div class="map-label">VELMARA BAY</div>
+  <canvas id="hud-minimap" width="190" height="190"></canvas>
+</div>
+
+<div id="hud-speed-box">
+  <div id="hud-speed">0</div>
+  <div id="hud-gear-row"><span class="unit">KM/H</span><span id="hud-gear">N</span></div>
+  <div id="hud-hint">WASD / ARROWS — DRIVE<br>SPACE — BRAKE &nbsp;·&nbsp; P — PAUSE<br>R — RESTART MISSION &nbsp;·&nbsp; M — MUTE</div>
+</div>
+
+<div id="hud-toast"></div>
+
+<div id="hud-start" class="overlay">
+  <h1>VELMARA</h1>
+  <h2>BAYFRONT GETAWAY &nbsp;·&nbsp; VELMARA BAY</h2>
+  <p>You are the getaway driver of Velmara Bay. Run five jobs along the
+  marina promenade, outrun the interceptors when the heat rises, and bank
+  every dollar. The city never sleeps — and neither do the police.</p>
+  <table class="controls-table">
+    <tr><td>W / S / ↑ / ↓</td><td>Accelerate / brake &amp; reverse</td></tr>
+    <tr><td>A / D / ← / →</td><td>Steer</td></tr>
+    <tr><td>SPACE</td><td>Handbrake</td></tr>
+    <tr><td>P / ESC</td><td>Pause</td></tr>
+    <tr><td>R</td><td>Restart mission</td></tr>
+    <tr><td>M</td><td>Mute sound</td></tr>
+  </table>
+  <button id="hud-start-btn" class="big-btn">START ENGINE</button>
+  <button id="hud-continue-btn" class="ghost-btn">CONTINUE SAVED GAME</button>
+  <div id="hud-save-note"></div>
+</div>
+
+<div id="hud-overlay" class="overlay">
+  <div id="hud-overlay-title">MISSION COMPLETE</div>
+  <div id="hud-overlay-sub">MISSION — MARINA PICKUP</div>
+  <div id="hud-overlay-desc">Package secured. Clean getaway. The next job is already lined up.</div>
+  <div id="hud-overlay-reward">+$400</div>
+  <button id="hud-overlay-btn" class="big-btn">NEXT MISSION</button>
+</div>
+
+<div id="hud-pause" class="overlay">
+  <h1>PAUSED</h1>
+  <p>Press P or ESC to keep driving. Your progress saves automatically after every job.</p>
+  <button id="hud-resume-btn" class="big-btn">RESUME</button>
+  <button id="hud-restart-btn" class="ghost-btn">RESTART MISSION</button>
+</div>
+
+<div id="hud-bust" class="overlay">
+  <h1>BUSTED</h1>
+  <p>The interceptors caught you standing still. $200 bail — back on the bayfront.</p>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/lighting.js"></script>
+<script src="src/city.js"></script>
+<script src="src/vehicles.js"></script>
+<script src="src/pedestrians.js"></script>
+<script src="src/player.js"></script>
+<script src="src/police.js"></script>
+<script src="src/combat.js"></script>
+<script src="src/missions.js"></script>
+<script src="src/hud.js"></script>
+<script src="src/shots.js"></script>
+<script src="src/main.js"></script>
 </body>
 </html>

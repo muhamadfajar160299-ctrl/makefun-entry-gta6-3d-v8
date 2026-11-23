@@ -1,313 +1,257 @@
-// main.js — VELMARA: Marina Nights. Bootstrap, camera, game loop, save.
-//
-// The camera chases the hero with FOV kick at speed, a touch of roll in
-// corners, look-ahead down the road, and shake on impacts. The menu opens
-// on a slow orbit of the marina; starting the engine drops you behind
-// the wheel. Progress (cash + mission) autosaves to localStorage.
-const THREE = window.THREE;
-import { createLighting } from './lighting.js';
-import { createCity } from './city.js';
-import { createPlayer, updatePlayer, collideBuildings } from './player.js';
-import { createTraffic, updateTraffic } from './vehicles.js';
-import { createPolice, updatePolice, setWanted, activePoliceCount, nearestPoliceDistance } from './police.js';
-import { createPedestrians, updatePedestrians } from './pedestrians.js';
-import { createMissions } from './missions.js';
-import { createCombat } from './combat.js';
-import { createHud } from './hud.js';
-import { createAudio } from './audio.js';
-import { applyShot, getShotState } from './shots.js';
+// VELMARA main — boot, game loop, camera, input and saving.
+// The modules are wired here: lighting, city, vehicles, pedestrians,
+// player, police, combat, missions, HUD, audio and the shot scenarios.
+(function () {
+  var G = (window.G = window.G || {});
 
-const SAVE_KEY = 'velmara-marina-nights-save-v1';
+  var SAVE_KEY = "velmara-save-v1";
 
-function loadSave() {
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (!raw) return null;
-    const s = JSON.parse(raw);
-    if (typeof s.cash !== 'number' || typeof s.mission !== 'number') return null;
-    return s;
-  } catch (e) {
-    return null;
-  }
-}
-
-function makeCameraRig(camera) {
-  const rig = {
-    mode: 'orbit',
-    orbitAngle: 0,
-    snapBehind(p) {
-      this.mode = 'chase';
-      const fx = Math.sin(p.heading);
-      const fz = -Math.cos(p.heading);
-      camera.position.set(p.x - fx * 10, 3.6, p.z - fz * 10);
-      camera.lookAt(p.x + fx * 8, 1.4, p.z + fz * 8);
-    },
-    snapOrbit(p, dist = 14, height = 5.5) {
-      this.mode = 'orbit-shot';
-      camera.position.set(p.x - 11, height, p.z + 9);
-      camera.lookAt(p.x + 9, 1.4, p.z);
-      void dist;
-    },
-    update(dt, p, input, shake) {
-      const speedNorm = Math.min(1, Math.abs(p.speed) / 45);
-      if (this.mode === 'orbit' || this.mode === 'menu') {
-        this.orbitAngle += dt * 0.07;
-        const cx = 140 + Math.cos(this.orbitAngle) * 46;
-        const cz = 20 + Math.sin(this.orbitAngle) * 46;
-        camera.position.set(cx, 13 + Math.sin(this.orbitAngle * 0.7) * 3, cz);
-        camera.lookAt(140, 2, 20);
-        camera.fov = 58;
-        camera.updateProjectionMatrix();
-        return;
-      }
-      if (this.mode === 'orbit-shot') {
-        camera.position.set(p.x - 11, 5.5, p.z + 9);
-        camera.lookAt(p.x + 9, 1.4, p.z);
-        return;
-      }
-      // Chase camera.
-      const fx = Math.sin(p.heading);
-      const fz = -Math.cos(p.heading);
-      const back = 9.5 + speedNorm * 3.5;
-      const up = 3.4 + speedNorm * 0.9;
-      const tx = p.x - fx * back;
-      const tz = p.z - fz * back;
-      const lerp = 1 - Math.pow(0.0001, dt);
-      camera.position.x += (tx - camera.position.x) * lerp;
-      camera.position.y += (up - camera.position.y) * lerp;
-      camera.position.z += (tz - camera.position.z) * lerp;
-      // Look-ahead: aim further down the road the faster you go.
-      const look = 7 + speedNorm * 9;
-      const lx = p.x + fx * look;
-      const lz = p.z + fz * look;
-      camera.lookAt(lx, 1.3, lz);
-      // Roll into corners + shake on impacts.
-      camera.rotation.z += -p.steer * 0.02;
-      if (shake > 0.01) {
-        camera.position.x += (Math.random() - 0.5) * shake * 0.5;
-        camera.position.y += (Math.random() - 0.5) * shake * 0.35;
-        camera.rotation.z += (Math.random() - 0.5) * shake * 0.03;
-      }
-      // FOV kick with speed.
-      const targetFov = 62 + speedNorm * 13;
-      if (Math.abs(camera.fov - targetFov) > 0.05) {
-        camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 4);
-        camera.updateProjectionMatrix();
-      }
-      void input;
-    },
-  };
-  return rig;
-}
-
-function boot() {
-  const canvas = document.getElementById('game-canvas');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 600);
-  camera.position.set(186, 14, 66);
-
-  const lighting = createLighting(scene, renderer);
-  const city = createCity(scene);
-  const player = createPlayer(scene);
-  const traffic = createTraffic(scene, 10);
-  const police = createPolice(scene, 4);
-  const peds = createPedestrians(scene, 14);
-  const missions = createMissions(scene);
-  const hud = createHud();
-  const audio = createAudio();
-
-  const game = {
-    scene, camera, renderer, city, lighting,
-    player, traffic, police, peds, missions, hud, audio,
-    combat: null,
-    state: 'menu',
+  var state = {
+    cash: 0,
+    wanted: 0,
+    missionIndex: 0,
+    started: false,
     paused: false,
-    stagingHold: false,
-    cash: 0, wanted: 0,
-    time: 0, shake: 0,
-    cameraRig: null,
-    version: 'r18-bright',
+    time: 0,
+    shotMode: false
   };
-  game.combat = createCombat(scene);
-  game.cameraRig = makeCameraRig(camera);
+  G.state = state;
 
-  // Restore save.
-  const save = loadSave();
-  if (save) {
-    game.cash = save.cash;
-    missions.start(Math.min(save.mission, 4), player);
-    if (save.cash > 0) hud.toast(`Welcome back — $${save.cash} banked, mission ${missions.current.id} active.`);
+  var keys = { up: false, down: false, left: false, right: false, brake: false };
+  var renderer, scene, camera, clock;
+  var completedOverlayAt = 0;
+
+  function $(id) { return document.getElementById(id); }
+
+  function loadSave() {
+    try {
+      var raw = window.localStorage.getItem(SAVE_KEY);
+      if (!raw) return null;
+      var s = JSON.parse(raw);
+      if (typeof s.cash !== "number" || typeof s.missionIndex !== "number") return null;
+      return s;
+    } catch (err) {
+      return null;
+    }
   }
-
-  const input = { up: false, down: false, left: false, right: false, brake: false };
-  const KEYMAP = {
-    KeyW: 'up', ArrowUp: 'up',
-    KeyS: 'down', ArrowDown: 'down',
-    KeyA: 'left', ArrowLeft: 'left',
-    KeyD: 'right', ArrowRight: 'right',
-    Space: 'brake',
-  };
 
   function saveGame() {
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ cash: game.cash, mission: missions.index }));
-    } catch (e) { /* storage is best-effort */ }
-  }
-
-  function startGame() {
-    audio.start();
-    game.state = 'playing';
-    game.cameraRig.mode = 'chase';
-    game.cameraRig.snapBehind(player);
-    hud.hideStart();
-    hud.hideComplete();
-    const m = missions.current;
-    if (m) {
-      game.wanted = m.wantedOnStart;
-      setWanted(police, game.wanted, player);
-      hud.toast(`Mission ${m.id} — ${m.name}`);
+      window.localStorage.setItem(SAVE_KEY, JSON.stringify({
+        cash: state.cash,
+        missionIndex: G.missions.index,
+        wanted: state.wanted,
+        savedAt: new Date().toISOString()
+      }));
+    } catch (err) {
+      /* storage may be unavailable; the game still plays */
     }
   }
 
-  window.addEventListener('keydown', (e) => {
-    if (KEYMAP[e.code] !== undefined) {
-      input[KEYMAP[e.code]] = true;
-      game.stagingHold = false;
-      if (game.state === 'menu') startGame();
-      e.preventDefault();
+  function startGame(fromSave) {
+    var save = fromSave ? loadSave() : null;
+    if (save) {
+      state.cash = save.cash;
+      G.missions.setIndex(save.missionIndex);
+      state.wanted = save.wanted || 0;
+      G.police.setWanted(state.wanted);
     }
-    if (e.code === 'KeyP' && game.state === 'playing') {
-      game.paused = !game.paused;
-      game.state = game.paused ? 'paused' : 'playing';
-      if (game.paused) hud.showPause(); else hud.hidePause();
-    } else if (e.code === 'KeyP' && game.state === 'paused') {
-      game.paused = false;
-      game.state = 'playing';
-      hud.hidePause();
-    }
-    if (e.code === 'KeyR' && (game.state === 'playing' || game.state === 'complete')) {
-      missions.start(missions.index, player);
-      player.reset(0, 30, 0);
-      game.state = 'playing';
-      hud.hideComplete();
-      game.cameraRig.mode = 'chase';
-      game.cameraRig.snapBehind(player);
-      hud.toast('Mission restarted.');
-    }
-    if (e.code === 'KeyM') {
-      const muted = audio.toggleMute();
-      hud.toast(muted ? 'Sound off.' : 'Sound on.');
-    }
-    if (e.code === 'Enter' && game.state === 'menu') startGame();
-    if (e.code === 'Enter' && game.state === 'complete') nextMission();
-  });
-  window.addEventListener('keyup', (e) => {
-    if (KEYMAP[e.code] !== undefined) input[KEYMAP[e.code]] = false;
-  });
-  document.getElementById('start-btn').addEventListener('click', startGame);
-  document.getElementById('resume-btn').addEventListener('click', () => {
-    game.paused = false;
-    game.state = 'playing';
-    hud.hidePause();
-  });
-  function nextMission() {
-    const m = missions.next();
-    hud.hideComplete();
-    if (!m) {
-      game.state = 'playing';
-      hud.toast('All missions complete — free roam!');
+    state.started = true;
+    state.paused = false;
+    G.hud.hideStart();
+    G.hud.showPause(false);
+    G.audio.unlock();
+    G.hud.toast(fromSave ? "Welcome back to Velmara Bay." : "Welcome to Velmara Bay. Follow the gold diamond.");
+  }
+
+  function togglePause() {
+    if (!state.started) return;
+    state.paused = !state.paused;
+    G.hud.showPause(state.paused);
+  }
+
+  function bindInput() {
+    var map = {
+      KeyW: "up", ArrowUp: "up",
+      KeyS: "down", ArrowDown: "down",
+      KeyA: "left", ArrowLeft: "left",
+      KeyD: "right", ArrowRight: "right",
+      Space: "brake"
+    };
+    window.addEventListener("keydown", function (e) {
+      if (e.code === "Enter" && !state.started) {
+        startGame(!!loadSave());
+        return;
+      }
+      if (e.code === "KeyP" || e.code === "Escape") {
+        if (state.started) togglePause();
+        return;
+      }
+      if (e.code === "KeyM") {
+        var muted = G.audio.toggleMute();
+        G.hud.toast(muted ? "Sound muted." : "Sound on.");
+        return;
+      }
+      if (e.code === "KeyR" && state.started) {
+        G.missions.setIndex(G.missions.index);
+        G.hud.toast("Mission restarted.");
+        return;
+      }
+      if (e.code === "Space") e.preventDefault();
+      if (map[e.code] !== undefined) keys[map[e.code]] = true;
+    });
+    window.addEventListener("keyup", function (e) {
+      if (map[e.code] !== undefined) keys[map[e.code]] = false;
+    });
+    var startBtn = $("hud-start-btn");
+    if (startBtn) startBtn.addEventListener("click", function () { startGame(false); });
+    var contBtn = $("hud-continue-btn");
+    if (contBtn) contBtn.addEventListener("click", function () { startGame(true); });
+    var nextBtn = $("hud-overlay-btn");
+    if (nextBtn) nextBtn.addEventListener("click", function () {
+      G.hud.hideComplete();
+      G.missions.next();
       saveGame();
-      return;
-    }
-    game.state = 'playing';
-    game.wanted = m.wantedOnStart;
-    setWanted(police, game.wanted, player);
-    game.cameraRig.mode = 'chase';
-    game.cameraRig.snapBehind(player);
-    hud.toast(`Mission ${m.id} — ${m.name}`);
-    saveGame();
+    });
+    var resumeBtn = $("hud-resume-btn");
+    if (resumeBtn) resumeBtn.addEventListener("click", togglePause);
+    var restartBtn = $("hud-restart-btn");
+    if (restartBtn) restartBtn.addEventListener("click", function () {
+      G.missions.setIndex(G.missions.index);
+      togglePause();
+    });
+    window.addEventListener("resize", function () {
+      if (!renderer || !camera) return;
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
   }
-  document.getElementById('next-btn').addEventListener('click', nextMission);
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+  function clockString() {
+    // Fixed 21:36 night clock: the whole game is one long marina night.
+    return "21:36 · NIGHT";
+  }
 
-  const clock = new THREE.Clock();
-  let hudAccum = 0;
+  function frame() {
+    requestAnimationFrame(frame);
+    var dt = Math.min(clock.getDelta(), 0.05);
+    state.time += dt;
 
-  function animate() {
-    requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05);
-    game.time += dt;
-    game.shake = Math.max(0, game.shake - dt * 1.6);
-
-    if (game.state === 'playing' && !game.paused) {
-      const drive = updatePlayer(player, input, dt, game);
-      if (!game.stagingHold) {
-        collideBuildings(player, city.colliders, game);
-        game.combat.checkCarCollisions(game);
+    if (state.started && !state.paused) {
+      if (state.shotMode) {
+        // Staged shots hold their pose: wheels keep spinning at the
+        // staged speed, but nothing drives away from its mark.
+        var hero = G.player;
+        var spin = (hero.speed * dt) / 0.37;
+        for (var wi = 0; wi < hero.wheels.length; wi++) {
+          hero.wheels[wi].rotation.x += spin;
+        }
+      } else {
+        G.player.update(dt, keys);
+        var ev = G.combat.update(dt, state);
+        if (ev === "busted") {
+          G.hud.showBusted(true);
+          setTimeout(function () {
+            G.hud.showBusted(false);
+            state.cash = Math.max(0, state.cash - 200);
+            state.wanted = 0;
+            G.police.setWanted(0);
+            G.combat.busted = false;
+            G.combat.bustTimer = 0;
+            G.player.reset(0, 34, Math.PI);
+          }, 2200);
+        } else if (ev === "ram" || ev === "bump") {
+          G.audio.blip(110, 0.12, 0.1);
+        } else if (ev === "wrecked") {
+          G.hud.toast("Car wrecked — $150 repair, back on the bayfront.");
+        }
+        var done = G.missions.update(dt, state.time, G.player.pos, state);
+        if (done) {
+          G.hud.showComplete(done);
+          completedOverlayAt = state.time;
+          saveGame();
+        }
       }
-      game.combat.damageSmoke(game, dt);
-      updateTraffic(traffic, dt, game.time, { x: player.x, z: player.z }, police);
-      updatePolice(police, player, dt, game.time);
-      updatePedestrians(peds, dt, game.time);
-      missions.update(dt, game.time, player);
-      if (missions.tryComplete(player, game)) {
-        game.wanted = Math.min(5, game.wanted + 1);
-        setWanted(police, game.wanted, player);
-        saveGame();
-      }
-      // Wanted creeps up if you keep ramming police cars.
-      audio.setEngine(drive.rpm, input.up ? 1 : 0, Math.min(1, Math.abs(player.speed) / 45));
-      audio.setSkid(player.skid === 1);
-      const nd = nearestPoliceDistance(police, player);
-      audio.setSiren(nd, game.time);
-    } else if (game.state === 'menu') {
-      updateTraffic(traffic, dt, game.time, null, police);
-      updatePedestrians(peds, dt, game.time);
-      missions.update(dt, game.time, player);
+      G.vehicles.update(dt);
+      G.pedestrians.update(dt, state.time);
+      G.police.update(dt, G.player);
+      G.lighting.update(G.player.pos, G.player.forward());
+      G.audio.update(G.player.speedKmh(), G.player.throttle || 0, state.wanted, dt);
     }
 
-    city.update(dt, game.time);
-    lighting.update(dt, game.time, player.group.position);
-    game.combat.update(dt);
-    game.cameraRig.update(dt, player, input, game.shake);
+    // Camera: staged shots use their own framing, play uses chase cam.
+    if (state.shotMode) {
+      G.shots.updateCamera(camera, G.player, dt);
+    } else {
+      var hero2 = G.player;
+      var fb = hero2.forward();
+      var cx = hero2.pos.x - fb.x * 9.5;
+      var cz = hero2.pos.z - fb.z * 9.5;
+      var k = 1 - Math.pow(0.001, dt); // smooth follow
+      camera.position.x += (cx - camera.position.x) * k;
+      camera.position.y += (4.4 - camera.position.y) * k;
+      camera.position.z += (cz - camera.position.z) * k;
+      camera.lookAt(hero2.pos.x + fb.x * 7, 1.4, hero2.pos.z + fb.z * 7);
+    }
 
-    hudAccum += dt;
-    if (hudAccum > 0.12) {
-      hudAccum = 0;
-      hud.update(game, dt);
+    if (state.started) {
+      G.hud.update(state, G.player, clockString());
     }
     renderer.render(scene, camera);
   }
-  animate();
 
-  // Staging + inspection hooks for the screenshot tool.
-  window.__VELMARA__ = {
-    game,
-    version: game.version,
-    ready: true,
-    applyShot: (n) => applyShot(game, n),
-    getShotState: () => getShotState(game),
-    start: startGame,
-  };
-  document.title = 'VELMARA — Marina Nights';
-  return game;
-}
+  function boot() {
+    if (typeof THREE === "undefined") {
+      document.body.setAttribute("data-pageerror", "THREE failed to load");
+      return;
+    }
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    G.lighting.setupRenderer(renderer);
+    $("game-root").appendChild(renderer.domElement);
 
-try {
-  boot();
-} catch (err) {
-  console.error('VELMARA boot failed:', err);
-  document.getElementById('start-screen').insertAdjacentHTML(
-    'beforeend',
-    `<p style="color:#ff8080">Could not start WebGL: ${String(err && err.message || err)}</p>`,
-  );
-}
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 900);
+    camera.position.set(0, 4.4, 44);
+    G.lighting.build(scene);
+    G.city.build(scene);
+    G.vehicles.init(scene);
+    G.pedestrians.init(scene);
+    G.player.build(scene);
+    G.player.reset(0, 34, Math.PI);
+    G.police.init(scene);
+    G.police.setWanted(0);
+    G.missions.build(scene);
+    G.hud.init();
+    G.audio.init();
+    bindInput();
+
+    clock = new THREE.Clock();
+    var shotId = G.shots.read();
+    if (shotId) {
+      state.shotMode = true;
+      G.shots.apply(state);
+      G.hud.update(state, G.player, clockString());
+    } else {
+      G.hud.showStart(!!loadSave());
+    }
+    frame();
+  }
+
+  window.addEventListener("error", function (e) {
+    try {
+      document.body.setAttribute("data-pageerror", String(e.message || e.error || "page error"));
+    } catch (err) { /* ignore */ }
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    try {
+      document.body.setAttribute("data-pageerror", String((e.reason && e.reason.message) || "unhandled rejection"));
+    } catch (err) { /* ignore */ }
+  });
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
