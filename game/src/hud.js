@@ -1,255 +1,179 @@
-// hud.js — DOM HUD: wanted stars, health, cash, clock, speed, mission text,
-// and a real road-map minimap (avenues, bay, player, objective, police).
-// Also owns every menu screen: start, pause, mission complete, story, busted, wasted.
+// Marina Nights — HUD. Money, wanted stars, speed, objective, damage bar,
+// and a REAL minimap: city blocks, bright roads with dashed yellow centrelines,
+// the blue bay strip, a gold player arrow, a pulsing objective dot, red
+// police dots, and "VELMARA BAY" + "N" labels.
+//
+// showScreen() takes a KEY ('start','story','win','pause','busted','wasted',
+// or null to hide all) and maps it to the right element — never a DOM id.
+// setHudVisible() is the single helper that reveals the HUD for gameplay.
+import { STREETS, BAY_X } from './city.js';
 
-const $ = (id) => document.getElementById(id);
+const SCREENS = {
+  start: 'screen-start',
+  story: 'screen-story',
+  win: 'screen-win',
+  pause: 'screen-pause',
+  busted: 'screen-busted',
+  wasted: 'screen-wasted',
+};
 
-function updateWantedHud() {
-  const el = $('stars');
-  if (!el) return;
-  let html = '';
-  for (let i = 0; i < 5; i++) {
-    html += i < G.wanted ? '<span>★</span>' : '<span class="off">★</span>';
-  }
-  el.innerHTML = html;
-}
-function updateHealthHud() {
-  const bar = $('health-bar');
-  if (bar) {
-    bar.style.width = Math.max(0, G.health) + '%';
-    bar.style.background = G.health > 50
-      ? 'linear-gradient(90deg,#37e08a,#a8ff6a)'
-      : G.health > 25 ? 'linear-gradient(90deg,#ffb93c,#ffd76a)' : 'linear-gradient(90deg,#ff5d5d,#ff8a5d)';
-  }
-}
-function updateMoneyHud() {
-  const el = $('money-line');
-  if (el) el.textContent = '$' + Math.floor(G.money).toLocaleString('en-US');
-}
-function updateClockHud() {
-  const el = $('clock-line');
-  if (!el) return;
-  const h = Math.floor(G.time) % 24;
-  const m = Math.floor((G.time % 1) * 60);
-  el.textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ' · NIGHT';
-}
-function updateMissionHud() {
-  if (missionFinished()) {
-    $('mission-title').textContent = 'VELMARA IS YOURS';
-    $('mission-text').textContent = 'Every job done. Free roam the bay.';
-    $('mission-dist').textContent = '';
-    return;
-  }
-  const m = currentMission();
-  const step = currentStep();
-  $('mission-title').textContent = m.title;
-  $('mission-text').textContent = step.text;
-  $('mission-dist').textContent = step.kind === 'timed'
-    ? 'TIME LEFT: ' + Math.max(0, Math.ceil(G.stepTimer)) + 's'
-    : '';
-}
-function updateSpeedHud() {
-  const box = $('speed-box');
-  if (!box) return;
-  if (G.playerCar) {
-    box.style.display = 'block';
-    $('speed-num').textContent = String(Math.round(Math.abs(G.playerCar.speed) * 3.6));
-  } else {
-    box.style.display = 'none';
-  }
-}
-function updateMissionDistHud() {
-  const el = $('mission-dist');
-  if (!el || missionFinished()) return;
-  const step = currentStep();
-  if (step.kind === 'timed') {
-    el.textContent = 'TIME LEFT: ' + Math.max(0, Math.ceil(G.stepTimer)) + 's';
-    return;
-  }
-  const d = objectiveDistance();
-  if (d >= 0) el.textContent = '◈ ' + Math.round(d) + ' m to objective';
-}
+function el(id) { return document.getElementById(id); }
 
-let toastTimer = null;
-function showToast(text) {
-  const el = $('toast');
-  if (!el) return;
-  el.textContent = text;
-  el.style.opacity = '1';
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 2600);
-}
+export function createHud() {
+  const hud = el('hud');
+  const moneyNum = el('money-num');
+  const stars = Array.from(el('wanted-stars').children);
+  const speedNum = el('speed-num');
+  const objTitle = el('objective-title');
+  const objText = el('objective-text');
+  const damageFill = el('damage-fill');
+  const messageBox = el('message');
+  const minimap = el('minimap');
+  const mctx = minimap.getContext('2d');
+  const winMission = el('win-mission');
+  const winText = el('win-text');
+  const winReward = el('win-reward');
+  let messageTimer = null;
 
-// ---- minimap: real avenues + bay, not a plain grid ----
-function drawMinimap() {
-  const cv = $('minimap');
-  if (!cv) return;
-  const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  const worldMin = -215, worldMax = 215;
-  const scale = W / (worldMax - worldMin);
-  const px = (x) => (x - worldMin) * scale;
-  const pz = (z) => (z - worldMin) * scale;
-  ctx.clearRect(0, 0, W, H);
-  // land — near-black so the city blocks read as a bright map on top
-  ctx.fillStyle = '#060a18';
-  ctx.fillRect(0, 0, W, H);
-  // bay (south) — a clear open blue, nothing like the land
-  ctx.fillStyle = '#1668b0';
-  ctx.fillRect(0, pz(CITY.waterZ), W, H - pz(CITY.waterZ));
-  ctx.fillStyle = 'rgba(225,242,255,0.55)';
-  for (let i = 0; i < 12; i++) {
-    const y = pz(CITY.waterZ) + 8 + i * 9;
-    ctx.fillRect(10 + ((i * 37) % 120), y, 46, 2);
-  }
-  // promenade — a warm brown strip along the waterfront
-  ctx.fillStyle = '#8a6f4d';
-  ctx.fillRect(0, pz(CITY.marinaZ), W, pz(CITY.waterZ) - pz(CITY.marinaZ));
-  // blocks — clearly lighter than the land, a dense city grid
-  ctx.fillStyle = '#2e3d6e';
-  const intervals = [[-185, -155], [-141, -81], [-67, -7], [7, 67], [81, 141], [155, 185]];
-  for (const [x0, x1] of intervals) {
-    for (const [z0, z1] of intervals) {
-      if (z0 >= 155) continue;
-      ctx.fillRect(px(x0), pz(z0), px(x1) - px(x0), pz(z1) - pz(z0));
+  // Minimap geometry: world [-210, 210] -> canvas [0, 200].
+  const MAP_MIN = -210, MAP_MAX = 210, MAP_SIZE = 200;
+  function mx(x) { return ((x - MAP_MIN) / (MAP_MAX - MAP_MIN)) * MAP_SIZE; }
+  function mz(z) { return ((z - MAP_MIN) / (MAP_MAX - MAP_MIN)) * MAP_SIZE; }
+
+  function drawMinimap(G, t) {
+    const c = mctx;
+    // deep water-coloured base
+    c.fillStyle = '#0b1c33';
+    c.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+    // city blocks (dark slabs between streets)
+    const edges = [-200, -171, -149, -91, -69, -11, 11, 69, 91, 149, 171, 189];
+    c.fillStyle = '#16233a';
+    for (let i = 0; i < edges.length; i += 2) {
+      for (let j = 0; j < edges.length; j += 2) {
+        c.fillRect(mx(edges[i]), mz(edges[j]), mx(edges[i + 1]) - mx(edges[i]), mz(edges[j + 1]) - mz(edges[j]));
+      }
     }
-  }
-  // avenues — bright, wide roads with a bright gold centreline
-  ctx.strokeStyle = '#f2f5ff';
-  ctx.lineWidth = 7;
-  for (const c of CITY.roads) {
-    ctx.beginPath(); ctx.moveTo(px(c), 0); ctx.lineTo(px(c), pz(185)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, pz(c)); ctx.lineTo(W, pz(c)); ctx.stroke();
-  }
-  ctx.strokeStyle = '#ffd76a';
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([7, 5]);
-  for (const c of CITY.roads) {
-    ctx.beginPath(); ctx.moveTo(px(c), 0); ctx.lineTo(px(c), pz(185)); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, pz(c)); ctx.lineTo(W, pz(c)); ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  // traffic dots
-  ctx.fillStyle = 'rgba(200,210,235,0.85)';
-  for (const car of G.cars) {
-    if (car.kind !== 'traffic') continue;
-    ctx.fillRect(px(car.mesh.position.x) - 1.5, pz(car.mesh.position.z) - 1.5, 3, 3);
-  }
-  // objective marker (pulsing gold)
-  if (!missionFinished()) {
-    const step = currentStep();
-    if (step.kind !== 'lose' && step.x != null) {
-      const pulse = 5 + Math.sin(G.elapsed * 5) * 2;
-      ctx.fillStyle = '#ffc94d';
-      ctx.beginPath();
-      ctx.arc(px(step.x), pz(step.z), pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+    // promenade strip (lighter, along the bay)
+    c.fillStyle = '#2e4a6b';
+    c.fillRect(mx(188), mz(-200), mx(200) - mx(188), mz(200) - mz(-200));
+    // bay: bright blue strip on the east edge
+    c.fillStyle = '#1565c0';
+    c.fillRect(mx(BAY_X), 0, MAP_SIZE - mx(BAY_X), MAP_SIZE);
+    c.fillStyle = '#1e88e5';
+    for (let y = 8; y < MAP_SIZE; y += 18) {
+      c.fillRect(mx(BAY_X) + 3, y, 8, 2);
     }
-  }
-  // police dots (red/blue)
-  for (let i = 0; i < G.policeCars.length; i++) {
-    const car = G.policeCars[i];
-    ctx.fillStyle = i % 2 ? '#ff3344' : '#3388ff';
-    ctx.beginPath();
-    ctx.arc(px(car.mesh.position.x), pz(car.mesh.position.z), 4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // player arrow — big gold with a white edge, so it jumps off the map
-  const pp = G.playerCar ? G.playerCar.mesh.position : (G.player ? G.player.mesh.position : { x: 0, z: 150 });
-  const yaw = G.playerCar ? G.playerCar.yaw : (G.player ? G.player.yaw : Math.PI);
-  const cx = px(pp.x), cy = pz(pp.z);
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(Math.atan2(Math.sin(yaw), -Math.cos(yaw)));
-  ctx.fillStyle = '#ffc94d';
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, -12); ctx.lineTo(8, 9); ctx.lineTo(0, 4.5); ctx.lineTo(-8, 9);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
-  ctx.restore();
-  // north tick
-  ctx.fillStyle = '#cfe3ff';
-  ctx.font = 'bold 11px Arial';
-  ctx.fillText('N', 6, 14);
-}
-
-// ---- screens ----
-function hideAllScreens() {
-  for (const id of ['start-screen', 'pause-screen', 'win-screen', 'story-screen', 'busted-screen', 'wasted-screen']) {
-    $(id).classList.add('hidden');
-  }
-}
-function showScreen(name, mission) {
-  hideAllScreens();
-  if (name === 'start') { $('start-screen').classList.remove('hidden'); G.mode = 'start'; return; }
-  if (name === 'pause') { $('pause-screen').classList.remove('hidden'); G.mode = 'paused'; return; }
-  if (name === 'win') {
-    $('win-text').textContent = mission ? mission.done : 'Job done.';
-    $('win-reward').textContent = mission ? '+$' + mission.reward.toLocaleString('en-US') : '';
-    $('win-screen').classList.remove('hidden');
-    G.mode = 'win';
-    return;
-  }
-  if (name === 'story') {
-    $('story-money').textContent = 'Total cash: $' + Math.floor(G.money).toLocaleString('en-US');
-    $('story-screen').classList.remove('hidden');
-    G.mode = 'story';
-    return;
-  }
-  if (name === 'busted') { $('busted-screen').classList.remove('hidden'); G.mode = 'busted'; return; }
-  if (name === 'wasted') {
-    G.health = 100;
-    updateHealthHud();
-    $('wasted-screen').classList.remove('hidden');
-    G.mode = 'wasted';
-    return;
-  }
-  if (name === 'none') { G.mode = 'playing'; return; }
-}
-function startPlaying() {
-  hideAllScreens();
-  $('hud').classList.remove('hidden');
-  G.mode = 'playing';
-  initAudio();
-  if (G.mode === 'playing' && missionFinished()) updateMissionHud();
-}
-
-function initHud() {
-  updateWantedHud();
-  updateHealthHud();
-  updateMoneyHud();
-  updateClockHud();
-  updateMissionHud();
-  $('resume-btn').addEventListener('click', () => { showScreen('none'); });
-  $('win-btn').addEventListener('click', () => {
-    hideAllScreens();
-    G.mode = 'playing';
-    startMission(G.missionIndex + 1);
-  });
-  $('story-btn').addEventListener('click', () => {
-    hideAllScreens();
-    G.mode = 'playing';
-    updateMissionHud();
-  });
-  $('busted-btn').addEventListener('click', () => {
-    hideAllScreens();
-    G.mode = 'playing';
-    updateWantedHud();
-    updateMoneyHud();
-  });
-  $('wasted-btn').addEventListener('click', () => {
-    hideAllScreens();
+    // roads: bright lines with dashed yellow centrelines.
+    // Vertical roads run the full height; horizontal roads stop at the
+    // promenade (x = 188) — the marina strip is pedestrian-only.
+    for (const s of STREETS) {
+      c.strokeStyle = '#c8d4e6';
+      c.lineWidth = 4;
+      c.beginPath(); c.moveTo(mx(s), 0); c.lineTo(mx(s), MAP_SIZE); c.stroke();
+      c.beginPath(); c.moveTo(0, mz(s)); c.lineTo(mx(188), mz(s)); c.stroke();
+      c.strokeStyle = '#ffd54a';
+      c.lineWidth = 1;
+      c.setLineDash([4, 5]);
+      c.beginPath(); c.moveTo(mx(s), 0); c.lineTo(mx(s), MAP_SIZE); c.stroke();
+      c.beginPath(); c.moveTo(0, mz(s)); c.lineTo(mx(188), mz(s)); c.stroke();
+      c.setLineDash([]);
+    }
+    // objective: pulsing gold dot
+    if (G.missions) {
+      const tgt = G.missions.current().target;
+      const pulse = 3.5 + Math.sin(t * 4) * 1.6;
+      c.fillStyle = '#ffd54a';
+      c.beginPath(); c.arc(mx(tgt.x), mz(tgt.z), pulse + 2.5, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#ff7a3d';
+      c.beginPath(); c.arc(mx(tgt.x), mz(tgt.z), pulse, 0, Math.PI * 2); c.fill();
+    }
+    // police: red dots
+    if (G.police) {
+      c.fillStyle = '#ff3344';
+      for (const car of G.police.cars) {
+        c.beginPath(); c.arc(mx(car.pos.x), mz(car.pos.z), 3, 0, Math.PI * 2); c.fill();
+      }
+    }
+    // player: gold arrow, rotated to heading.
+    // World forward is (sin h, cos h) in (x, z); the map draws z downward,
+    // so the arrow (drawn pointing up) rotates by (PI - h).
     if (G.player) {
-      G.player.mesh.position.set(12, 0, 150);
-      G.player.yaw = Math.PI;
+      const px = mx(G.player.pos.x);
+      const py = mz(G.player.pos.z);
+      c.save();
+      c.translate(px, py);
+      c.rotate(Math.PI - G.player.heading);
+      c.fillStyle = '#ffd54a';
+      c.strokeStyle = '#7a5b00';
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(0, -8); c.lineTo(5.5, 6); c.lineTo(0, 3); c.lineTo(-5.5, 6); c.closePath();
+      c.fill(); c.stroke();
+      c.restore();
     }
-    G.health = 100;
-    updateHealthHud();
-    G.mode = 'playing';
-  });
+    // labels
+    c.fillStyle = 'rgba(234,242,255,0.92)';
+    c.font = 'bold 9px sans-serif';
+    c.fillText('VELMARA BAY', 8, 12);
+    c.fillStyle = '#7fe3ff';
+    c.font = 'bold 11px sans-serif';
+    c.fillText('N', MAP_SIZE - 14, 14);
+    c.strokeStyle = 'rgba(127,227,255,0.8)';
+    c.beginPath(); c.moveTo(MAP_SIZE - 10, 18); c.lineTo(MAP_SIZE - 10, 26); c.stroke();
+    c.beginPath(); c.moveTo(MAP_SIZE - 13, 21); c.lineTo(MAP_SIZE - 10, 17); c.lineTo(MAP_SIZE - 7, 21); c.stroke();
+  }
+
+  return {
+    showScreen(key) {
+      for (const k of Object.keys(SCREENS)) {
+        const node = el(SCREENS[k]);
+        if (node) node.classList.add('hidden');
+      }
+      if (key && SCREENS[key]) {
+        const node = el(SCREENS[key]);
+        if (node) node.classList.remove('hidden');
+      }
+    },
+    // The one helper that reveals the HUD for gameplay: drops the hidden
+    // class AND clears any inline display:none.
+    setHudVisible(v) {
+      if (!hud) return;
+      if (v) {
+        hud.classList.remove('hidden');
+        hud.style.display = '';
+      } else {
+        hud.classList.add('hidden');
+        hud.style.display = 'none';
+      }
+    },
+    setMoney(n) { if (moneyNum) moneyNum.textContent = String(n); },
+    setWanted(n) {
+      stars.forEach((s, i) => s.classList.toggle('lit', i < n));
+    },
+    setSpeed(kmh) { if (speedNum) speedNum.textContent = String(Math.round(kmh)); },
+    setObjective(title, text) {
+      if (objTitle) objTitle.textContent = title;
+      if (objText) objText.textContent = text;
+    },
+    setDamage(pct) {
+      if (damageFill) damageFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    },
+    setWinText(name, reward, last) {
+      if (winMission) winMission.textContent = 'MISSION — ' + name.toUpperCase();
+      if (winText) {
+        winText.textContent = last
+          ? 'All five jobs done. Velmara Bay is yours — the crew is already talking about the next score.'
+          : 'Package secured. Clean getaway. The next job is already lined up.';
+      }
+      if (winReward) winReward.textContent = '+$' + reward;
+    },
+    showMessage(text, ms) {
+      if (!messageBox) return;
+      messageBox.textContent = text;
+      messageBox.classList.remove('hidden');
+      if (messageTimer) clearTimeout(messageTimer);
+      messageTimer = setTimeout(() => messageBox.classList.add('hidden'), ms || 2600);
+    },
+    drawMinimap,
+  };
 }

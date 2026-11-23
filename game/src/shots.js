@@ -1,105 +1,86 @@
-// shots.js — screenshot staging: ?shot=1..4 prepares a real, running
-// scene for each of the four screenshots (chase, marina walk, drive, win).
-// The game is genuinely playing in every shot — no composited images.
+// Marina Nights — screenshot staging. The shot number is ALWAYS parsed fresh
+// from the URL query string (?shot=N) when a shot is applied — never
+// hard-coded — so ?shot=1..4 each stage a different scene.
+export function parseShot() {
+  try {
+    const n = parseInt(new URLSearchParams(window.location.search).get('shot') || '0', 10);
+    return n >= 1 && n <= 4 ? n : 0;
+  } catch (e) { return 0; }
+}
 
-function applyShot() {
-  const params = new URLSearchParams(window.location.search);
-  const shot = parseInt(params.get('shot') || '0', 10);
-  G.shot = shot;
-  if (!shot) return;
-  // every shot starts playing immediately (no start screen)
-  hideAllScreens();
-  $('hud').classList.remove('hidden');
-  G.mode = 'playing';
-  G.time = 21.6;
-  initAudio();
-  if (AudioSys.ctx && AudioSys.ctx.state === 'suspended') AudioSys.ctx.resume().catch(() => {});
-  G.muted = true;   // silent headless capture
+export function applyShot(n, G) {
+  // Re-read the URL so the applied shot always matches the live parameter.
+  const live = parseShot();
+  if (live) n = live;
+  if (!n) return;
+  G.state.shotMode = n;
+  G.state.started = true;
+  G.hud.setHudVisible(true);
+  G.hud.showScreen(null);
 
-  const p = G.player;
-  if (shot === 1) {
-    // COVER — night chase along the promenade: gold Vantara GT racing east
-    // past the marina, two VPD interceptors cutting in from the flanks,
-    // 3 wanted stars, mission live, beacon ahead.
-    G.missionIndex = 0; G.missionStep = 0;
-    startMission(0);
-    p.mesh.position.set(0, 0, 118);
-    p.mesh.visible = false;
-    const car = G.cars.find((c) => c.isPlayer) || nearestCarTo(0, 118, 80);
-    if (car) {
-      car.kind = 'player'; car.isPlayer = true;
-      car.mesh.position.set(-30, 0, 177);
-      car.yaw = Math.PI / 2; car.speed = 12;   // heading east along the waterfront
-      G.playerCar = car;
+  if (n === 1) {
+    // 1 — CHASE: police pursuit, wanted 3, patrol cars right on the player.
+    // NOTE: start the mission FIRST (it resets wanted to 0), then set wanted 3.
+    G.missions.start(0);
+    G.player.reset(0, -40, 0);
+    G.player.speed = 20;
+    G.setWanted(3);
+    // Stage the patrol cars where the chase camera can SEE them: two
+    // oncoming ahead (left/right) and one pulling alongside.
+    {
+      const f = G.player.forward();
+      const h = G.player.heading;
+      const right = { x: Math.cos(h), z: -Math.sin(h) };
+      const spots = [
+        { lat: -14, ahead: 26, heading: h + Math.PI },
+        { lat: 14, ahead: 30, heading: h + Math.PI },
+        { lat: 22, ahead: 6, heading: h },
+      ];
+      G.police.cars.forEach((car, i) => {
+        const s = spots[i % spots.length];
+        const px = G.player.pos.x + f.x * s.ahead + right.x * s.lat;
+        const pz = G.player.pos.z + f.z * s.ahead + right.z * s.lat;
+        car.pos.set(px, 0, pz);
+        car.group.position.copy(car.pos);
+        car.heading = s.heading;
+        car.group.rotation.y = s.heading;
+        car.speed = 16;
+      });
     }
-    G.wanted = 3;
-    updateWantedHud();
-    // two interceptors cutting in from the player's front flanks
-    const flankSpots = [[-22, 173.5], [-24, 180.5]];
-    for (let i = 0; i < 2; i++) {
-      const pc = spawnPoliceCar();
-      pc.mesh.position.set(flankSpots[i][0], 0, flankSpots[i][1]);
-      pc.yaw = Math.PI / 2;
-      pc.speed = 16;
-    }
-    G.camYaw = Math.PI;
-    G.camPitch = 0.3;
-  } else if (shot === 2) {
-    // MARINA WALK — on foot on the promenade: yachts, neon, palms, crowd.
-    G.missionIndex = 0; G.missionStep = 0;
-    startMission(0);
-    p.mesh.position.set(10, 0, 180);
-    p.yaw = 0.5;   // facing the bay, three-quarter view
-    G.camYaw = Math.PI + 0.55;   // camera north-west, diagonal over the bay
-    G.camPitch = 0.22;   // low angle: more bay and skyline, less empty tile
-    G.camDist = 9;
-    G.wanted = 0;
-    updateWantedHud();
-    // a crowd right around Rae so the frame is busy from the first frame
-    const crowdSpots = [[2, 176], [16, 174], [20, 182], [4, 184], [24, 178], [-2, 180], [12, 172], [18, 188]];
-    for (const [cx, cz] of crowdSpots) spawnPed(cx, cz, cityRand() * Math.PI * 2);
-  } else if (shot === 3) {
-    // CITY DRIVE — driving up the main avenue with traffic and towers.
-    G.missionIndex = 2; G.missionStep = 0;
-    startMission(2);
-    p.mesh.visible = false;
-    const car = G.cars.find((c) => c.isPlayer) || nearestCarTo(0, 40, 100);
-    if (car) {
-      car.kind = 'player'; car.isPlayer = true;
-      car.mesh.position.set(0, 0, 40);
-      car.yaw = Math.PI; car.speed = 20;   // heading north up the avenue
-      G.playerCar = car;
-    }
-    // three traffic cars ahead on the same avenue (north of the player)
-    const aheadSpots = [[-3, 12], [3, -8], [-3, -30]];
-    const traffic = G.cars.filter((c) => c.kind === 'traffic');
-    for (let i = 0; i < Math.min(3, traffic.length); i++) {
-      const c = traffic[i];
-      c.mesh.position.x = aheadSpots[i][0];
-      c.mesh.position.z = aheadSpots[i][1];
-      c.yaw = Math.PI;
-      if (c.route) { c.route.axis = 'z'; c.route.line = aheadSpots[i][0]; c.route.dir = -1; }
-    }
-    G.wanted = 0;
-    updateWantedHud();
-    G.camYaw = Math.PI;
-    G.camPitch = 0.3;
-  } else if (shot === 4) {
-    // WIN — mission complete screen over the glowing marina.
-    startMission(0);
-    G.money += 400;
-    updateMoneyHud();
-    p.mesh.position.set(-4, 0, 172);
-    p.yaw = Math.PI;   // facing north, toward the camera
-    G.camYaw = 0;      // camera south of Rae, city skyline behind
-    G.camPitch = 0.25;
-    G.camDist = 8;
-    const m = MISSIONS[0];
-    showScreen('win', m);
+    G.hud.showMessage('LOSE THE COPS', 3000);
+  } else if (n === 2) {
+    // 2 — MARINA: the busy promenade, yachts, string lights, crowds.
+    // Camera sits over the water looking back at the promenade + skyline,
+    // so the bay, yachts and cafes are all in frame.
+    G.setWanted(0);
+    G.player.reset(192, 60, Math.PI); // on the promenade, facing down the bay
+    G.player.speed = 0;
+    G.missions.start(0);
+    G.shotCamera = {
+      pos: [250, 24, 95],
+      lookAt: [192, 2, 10],
+    };
+  } else if (n === 3) {
+    // 3 — DRIVE: flat-out down a neon street at ~130 km/h.
+    G.setWanted(0);
+    G.player.reset(-120, 0, Math.PI / 2); // facing +x along the z=0 street
+    G.player.speed = 36;
+    G.missions.start(0);
+  } else if (n === 4) {
+    // 4 — WIN: mission 1 complete, reward paid, win screen up.
+    G.player.reset(194, 0, Math.PI);
+    G.player.speed = 0;
+    G.setWanted(0);
+    G.missions.start(0);
+    G.missions.complete();
   }
-  // snap the camera to the staged framing on the very first frame
-  updateCamera(10);
-  // paint the minimap once even when the shot ends on a menu screen
-  // (the loop only redraws it while playing)
-  drawMinimap();
+  // Chase shots (1 and 3) need the camera snapped behind the car BEFORE the
+  // first frame: lerping from the spawn point would swing the camera through
+  // buildings at low fps and ruin the screenshot.
+  if (n === 1 || n === 3) {
+    const f = G.player.forward();
+    G.camera.position.set(G.player.pos.x - f.x * 11, 4.6, G.player.pos.z - f.z * 11);
+    G.camera.lookAt(G.player.pos.x + f.x * 9, 1.4, G.player.pos.z + f.z * 9);
+  }
+  G.lighting.applyShot();
 }

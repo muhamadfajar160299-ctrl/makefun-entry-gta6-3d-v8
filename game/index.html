@@ -1,169 +1,159 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VELMARA — Marina Nights</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marina Nights — GTA 6 | VELMARA BAY</title>
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
-    background: #05070f; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
-  #game-container { position: fixed; inset: 0; }
-  #game-container canvas { display: block; }
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10;
-    color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.6); }
-  .panel { background: rgba(5, 10, 26, .55); border: 1px solid rgba(255, 215, 130, .35);
-    border-radius: 10px; padding: 8px 12px; backdrop-filter: blur(2px); }
-  #wanted-box { position: absolute; top: 14px; right: 16px; text-align: right; }
-  #stars { font-size: 30px; letter-spacing: 4px; color: #ffd76a; line-height: 1; }
-  #stars .off { color: rgba(255,255,255,.22); }
-  #money-line { font-size: 22px; font-weight: 700; color: #7dffb0; margin-top: 4px; }
-  #clock-line { font-size: 16px; color: #cfe3ff; margin-top: 2px; }
-  #health-box { position: absolute; top: 14px; left: 16px; width: 240px; }
-  #health-label { font-size: 13px; letter-spacing: 2px; color: #ffe9a8; margin-bottom: 4px; }
-  #health-bar-outer { height: 14px; border-radius: 7px; background: rgba(0,0,0,.6);
-    border: 1px solid rgba(255,255,255,.35); overflow: hidden; }
-  #health-bar { height: 100%; width: 100%; background: linear-gradient(90deg, #37e08a, #a8ff6a);
-    border-radius: 6px; transition: width .2s; }
-  #speed-box { position: absolute; right: 16px; bottom: 16px; text-align: right; display: none; }
-  #speed-num { font-size: 44px; font-weight: 800; line-height: 1; color: #fff; }
-  #speed-unit { font-size: 13px; letter-spacing: 3px; color: #ffd76a; }
-  #mission-box { position: absolute; left: 50%; transform: translateX(-50%); bottom: 18px;
-    min-width: 420px; max-width: 640px; text-align: center; }
-  #mission-title { font-size: 15px; font-weight: 800; letter-spacing: 2px; color: #ffd76a; }
-  #mission-text { font-size: 16px; color: #fff; margin-top: 2px; }
-  #mission-dist { font-size: 14px; color: #9fd8ff; margin-top: 2px; }
-  #toast { position: absolute; left: 50%; top: 84px; transform: translateX(-50%);
-    font-size: 20px; font-weight: 700; color: #ffe9a8; opacity: 0; transition: opacity .3s;
-    background: rgba(5,10,26,.6); padding: 8px 18px; border-radius: 8px;
-    border: 1px solid rgba(255,215,130,.4); white-space: nowrap; }
-  #minimap-wrap { position: absolute; left: 16px; bottom: 16px; }
-  #minimap { border-radius: 10px; border: 2px solid rgba(255, 215, 130, .55);
-    box-shadow: 0 0 18px rgba(0,0,0,.7); background: #0a1024; display: block; }
-  #minimap-label { font-size: 11px; letter-spacing: 3px; color: #cfe3ff; margin-top: 4px;
-    text-align: center; }
-  #hint-line { position: absolute; left: 50%; transform: translateX(-50%); top: 14px;
-    font-size: 14px; color: #dfeaff; background: rgba(5,10,26,.5); padding: 6px 12px;
-    border-radius: 8px; }
-  .overlay { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center;
-    justify-content: center; flex-direction: column; text-align: center; color: #fff;
-    background: radial-gradient(ellipse at 50% 35%, rgba(20, 40, 90, .62), rgba(3, 5, 14, .82)); }
-  .overlay h1 { font-size: 84px; margin: 0; letter-spacing: 14px; font-weight: 900;
-    background: linear-gradient(180deg, #fff6d8, #ffd76a 45%, #ff9d3c);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 42px rgba(255, 190, 80, .35); }
-  .overlay h2 { font-size: 22px; letter-spacing: 6px; color: #9fd8ff; margin: 6px 0 0; font-weight: 600; }
-  .overlay .sub { font-size: 17px; color: #e8efff; margin-top: 18px; max-width: 620px; line-height: 1.55; }
-  .overlay .press { font-size: 22px; font-weight: 800; color: #ffd76a; margin-top: 30px;
-    animation: pulse 1.4s ease-in-out infinite; letter-spacing: 2px; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-  .controls { margin-top: 26px; font-size: 15px; color: #cfe0ff; line-height: 1.9;
-    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.18);
-    border-radius: 12px; padding: 14px 26px; text-align: left; }
-  .controls b { color: #ffd76a; }
-  .overlay .big { font-size: 64px; font-weight: 900; letter-spacing: 6px; margin: 0; }
-  .overlay .gold { color: #ffd76a; }
-  .overlay .red { color: #ff5d5d; }
-  .overlay button { pointer-events: auto; margin-top: 26px; font-size: 19px; font-weight: 800;
-    letter-spacing: 1px; padding: 13px 34px; border-radius: 10px; border: none; cursor: pointer;
-    color: #1a1206; background: linear-gradient(180deg, #ffe9a8, #ffb93c); }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05080f;
+    font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; color: #eaf2ff; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; width: 100%; height: 100%; }
   .hidden { display: none !important; }
-  #js-errors { position: fixed; left: 0; bottom: 0; z-index: 99; color: #f66; font-size: 10px;
-    background: rgba(0,0,0,.7); max-width: 600px; white-space: pre-wrap; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #topbar { position: absolute; top: 14px; left: 16px; right: 16px;
+    display: flex; justify-content: space-between; align-items: flex-start; }
+  #money { font-size: 30px; font-weight: 800; color: #ffd54a; letter-spacing: 1px;
+    text-shadow: 0 2px 10px rgba(0,0,0,.85), 0 0 22px rgba(255,213,74,.35); }
+  #money small { font-size: 15px; color: #ffe9a8; font-weight: 600; display: block; letter-spacing: 3px; }
+  #wanted-wrap { text-align: center; }
+  #wanted-stars { font-size: 30px; letter-spacing: 6px; color: #3a4a63;
+    text-shadow: 0 2px 8px rgba(0,0,0,.9); }
+  #wanted-stars .lit { color: #ffd54a; text-shadow: 0 0 14px rgba(255,213,74,.9); }
+  #wanted-label { font-size: 11px; letter-spacing: 4px; color: #9fb4d8; margin-top: 2px; }
+  #damage-wrap { width: 220px; margin: 8px auto 0; }
+  #damage-label { font-size: 10px; letter-spacing: 3px; color: #9fb4d8; text-align: center; }
+  #damage-bar { height: 7px; background: rgba(255,255,255,.14); border-radius: 4px; overflow: hidden; margin-top: 3px; }
+  #damage-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#37e08b,#ffd54a,#ff5252); transition: width .2s; }
+  #objective { position: absolute; top: 86px; left: 16px; max-width: 380px;
+    background: rgba(5,12,26,.72); border: 1px solid rgba(255,213,74,.45); border-left: 5px solid #ffd54a;
+    border-radius: 10px; padding: 12px 16px; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
+  #objective h3 { font-size: 12px; letter-spacing: 3px; color: #ffd54a; margin-bottom: 5px; }
+  #objective p { font-size: 15px; line-height: 1.45; color: #eaf2ff; }
+  #speed { position: absolute; right: 22px; bottom: 20px; text-align: right;
+    text-shadow: 0 2px 12px rgba(0,0,0,.9); }
+  #speed-num { font-size: 56px; font-weight: 800; color: #fff; line-height: 1; }
+  #speed-unit { font-size: 14px; letter-spacing: 3px; color: #ffd54a; }
+  #minimap-wrap { position: absolute; left: 16px; bottom: 16px; border: 2px solid rgba(255,213,74,.75);
+    border-radius: 10px; overflow: hidden; box-shadow: 0 8px 28px rgba(0,0,0,.65); background: #0b1c33; }
+  #minimap { display: block; width: 200px; height: 200px; }
+  #minimap-caption { position: absolute; left: 16px; bottom: 222px; font-size: 11px; letter-spacing: 3px;
+    color: #9fb4d8; text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+  #message { position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+    font-size: 24px; font-weight: 700; color: #ffd54a; text-shadow: 0 2px 14px rgba(0,0,0,.9);
+    background: rgba(5,12,26,.6); padding: 10px 22px; border-radius: 10px; }
+  #controls-hint { position: absolute; right: 22px; bottom: 96px; font-size: 11px; color: #9fb4d8;
+    text-align: right; line-height: 1.7; text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+
+  /* ---------- Screens ---------- */
+  .screen { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(ellipse at 50% 30%, rgba(16,42,84,.92), rgba(3,6,14,.96));
+    backdrop-filter: blur(4px); padding: 24px; }
+  .screen h1 { font-size: 64px; font-weight: 900; letter-spacing: 10px; line-height: 1.05;
+    background: linear-gradient(180deg,#fff6c9,#ffd54a 45%,#ff7a3d); -webkit-background-clip: text;
+    background-clip: text; color: transparent; text-shadow: 0 0 42px rgba(255,170,40,.25); }
+  .screen h2 { font-size: 44px; font-weight: 900; letter-spacing: 8px; color: #ffd54a;
+    text-shadow: 0 0 30px rgba(255,213,74,.4); }
+  .screen .sub { font-size: 20px; letter-spacing: 12px; color: #7fe3ff; margin-top: 8px; font-weight: 600; }
+  .screen p { max-width: 560px; font-size: 16px; line-height: 1.65; color: #c9d8ef; margin: 18px 0; }
+  .screen .keys { font-size: 14px; line-height: 2; color: #9fb4d8; margin-bottom: 10px; }
+  .screen .keys b { color: #ffd54a; background: rgba(255,213,74,.12); border: 1px solid rgba(255,213,74,.4);
+    border-radius: 5px; padding: 2px 8px; margin: 0 2px; }
+  .btn { pointer-events: auto; cursor: pointer; margin-top: 14px; font-size: 18px; font-weight: 800;
+    letter-spacing: 4px; color: #1a1206; background: linear-gradient(180deg,#ffe082,#ffb300);
+    border: none; border-radius: 12px; padding: 15px 42px;
+    box-shadow: 0 8px 30px rgba(255,179,0,.45); transition: transform .12s; }
+  .btn:hover { transform: translateY(-2px) scale(1.02); }
+  .btn.ghost { background: transparent; color: #ffd54a; border: 2px solid rgba(255,213,74,.6); box-shadow: none; }
+  #win-reward { font-size: 30px; font-weight: 800; color: #37e08b; margin-top: 8px; }
+  #loading { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+    background: #05080f; color: #ffd54a; font-size: 18px; letter-spacing: 5px; }
 </style>
 </head>
 <body>
-<div id="game-container"></div>
+<div id="loading">LOADING&nbsp;MARINA&nbsp;NIGHTS…</div>
+<div id="app"></div>
 
+<!-- HUD -->
 <div id="hud" class="hidden">
-  <div id="health-box" class="panel">
-    <div id="health-label">HEALTH</div>
-    <div id="health-bar-outer"><div id="health-bar"></div></div>
+  <div id="topbar">
+    <div id="money"><small>CASH</small>$<span id="money-num">0</span></div>
+    <div id="wanted-wrap">
+      <div id="wanted-stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
+      <div id="wanted-label">WANTED</div>
+      <div id="damage-wrap">
+        <div id="damage-label">VEHICLE DAMAGE</div>
+        <div id="damage-bar"><div id="damage-fill"></div></div>
+      </div>
+    </div>
+    <div style="width:130px"></div>
   </div>
-  <div id="wanted-box" class="panel">
-    <div id="stars"></div>
-    <div id="money-line">$250</div>
-    <div id="clock-line">21:36</div>
-  </div>
-  <div id="hint-line">E — enter / exit car &nbsp;·&nbsp; F — punch &nbsp;·&nbsp; P — pause &nbsp;·&nbsp; M — mute</div>
-  <div id="toast"></div>
-  <div id="minimap-wrap">
-    <canvas id="minimap" width="190" height="190"></canvas>
-    <div id="minimap-label">VELMARA BAY</div>
-  </div>
-  <div id="speed-box" class="panel">
-    <div id="speed-num">0</div>
-    <div id="speed-unit">KM/H</div>
-  </div>
-  <div id="mission-box" class="panel">
-    <div id="mission-title">MARINA NIGHTS</div>
-    <div id="mission-text">Meet Marco Vane at the marina.</div>
-    <div id="mission-dist"></div>
-  </div>
+  <div id="objective"><h3 id="objective-title">MISSION 1 — MARINA PICKUP</h3><p id="objective-text">Drive to the marina promenade and pick up the package.</p></div>
+  <div id="minimap-caption">VELMARA BAY</div>
+  <div id="minimap-wrap"><canvas id="minimap" width="200" height="200"></canvas></div>
+  <div id="speed"><div id="speed-num">0</div><div id="speed-unit">KM/H</div></div>
+  <div id="controls-hint">WASD / ARROWS — DRIVE<br>SPACE — BRAKE &nbsp;·&nbsp; P — PAUSE<br>R — RESTART MISSION</div>
+  <div id="message" class="hidden"></div>
 </div>
 
-<div id="start-screen" class="overlay">
-  <h1>VELMARA</h1>
-  <h2>MARINA NIGHTS</h2>
-  <div class="sub">You are Rae, a getaway driver for fixer Marco Vane. The marina glows,
-    the yachts are worth millions, and the whole city is yours — on foot or behind the wheel.
-    Run jobs, dodge the Velmara PD, and get rich.</div>
-  <div class="controls">
-    <b>W A S D</b> — move / drive &nbsp;&nbsp; <b>Mouse drag</b> — camera &nbsp;&nbsp; <b>Wheel</b> — zoom<br>
-    <b>E</b> — enter / exit car &nbsp;&nbsp; <b>Shift</b> — sprint &nbsp;&nbsp; <b>F</b> — punch<br>
-    <b>P</b> — pause &nbsp;&nbsp; <b>M</b> — mute sound
-  </div>
-  <div class="press">PRESS ENTER TO START</div>
-  <div class="sub" style="font-size:13px;color:#9fb4d8">Progress and cash save automatically in this browser.</div>
+<!-- START -->
+<div id="screen-start" class="screen hidden">
+  <h1>MARINA<br>NIGHTS</h1>
+  <div class="sub">V E L M A R A &nbsp; B A Y</div>
+  <p>Night falls over the marina. Five jobs, one fast car, and the whole
+  Velmara Bay police department on your tail. Drive the neon streets,
+  pick up the packages, and don't get busted.</p>
+  <div class="keys"><b>W A S D</b> or <b>← ↑ ↓ →</b> drive &nbsp; <b>SPACE</b> brake<br>
+  <b>P</b> pause &nbsp; <b>R</b> restart mission</div>
+  <button class="btn" id="btn-start">START ENGINE</button>
 </div>
 
-<div id="pause-screen" class="overlay hidden">
-  <div class="big gold">PAUSED</div>
-  <div class="sub">The marina waits. Your money and mission progress are saved.</div>
-  <button id="resume-btn">RESUME</button>
+<!-- STORY -->
+<div id="screen-story" class="screen hidden">
+  <h2>THE JOB</h2>
+  <div class="sub">MISSION 1 — MARINA PICKUP</div>
+  <p>A client left a package on the marina promenade, east end of the bay.
+  Drive there, grab it, and get clear. The gold beacon marks the spot —
+  follow it on the road and on your minimap. Cops are already sniffing around.</p>
+  <button class="btn" id="btn-begin">BEGIN MISSION</button>
 </div>
 
-<div id="win-screen" class="overlay hidden">
-  <div class="big gold">MISSION COMPLETE</div>
-  <div class="sub" id="win-text">Job done. Marco Vane is impressed.</div>
-  <div class="sub" id="win-reward" style="color:#7dffb0;font-size:22px;font-weight:800"></div>
-  <button id="win-btn">CONTINUE</button>
+<!-- WIN -->
+<div id="screen-win" class="screen hidden">
+  <h2>MISSION COMPLETE</h2>
+  <div class="sub" id="win-mission">MISSION 1 — MARINA PICKUP</div>
+  <p id="win-text">Package secured. Clean getaway.</p>
+  <div id="win-reward">+$400</div>
+  <button class="btn" id="btn-continue">NEXT MISSION</button>
 </div>
 
-<div id="story-screen" class="overlay hidden">
-  <div class="big gold">VELMARA IS YOURS</div>
-  <div class="sub">Every job done. Every cop outrun. The marina lights spell your name tonight —
-    Rae, the driver who owns the bay.</div>
-  <div class="sub" id="story-money" style="color:#7dffb0;font-size:22px;font-weight:800"></div>
-  <button id="story-btn">KEEP DRIVING</button>
+<!-- PAUSE -->
+<div id="screen-pause" class="screen hidden">
+  <h2>PAUSED</h2>
+  <p>Take a breath. The bay isn't going anywhere.</p>
+  <button class="btn" id="btn-resume">RESUME</button>
 </div>
 
-<div id="busted-screen" class="overlay hidden">
-  <div class="big red">BUSTED</div>
-  <div class="sub">The Velmara PD caught up with you. Bail posted — but the night is not over.</div>
-  <button id="busted-btn">BACK ON THE STREET</button>
+<!-- BUSTED -->
+<div id="screen-busted" class="screen hidden">
+  <h2>BUSTED</h2>
+  <p>The Velmara Bay PD finally boxed you in. The car is impounded,
+  the package is gone — but the night is young.</p>
+  <button class="btn" id="btn-busted-retry">TRY AGAIN</button>
 </div>
 
-<div id="wasted-screen" class="overlay hidden">
-  <div class="big red">WASTED</div>
-  <div class="sub">Rae is down. The marina keeps glowing without you — for now.</div>
-  <button id="wasted-btn">TRY AGAIN</button>
+<!-- WASTED -->
+<div id="screen-wasted" class="screen hidden">
+  <h2>WASTED</h2>
+  <p>Your ride is scrap metal. That was one crash too many.</p>
+  <button class="btn" id="btn-wasted-retry">GET A NEW RIDE</button>
 </div>
 
-<div id="js-errors"></div>
-<div id="debug-state" style="display:none"></div>
-
-<script src="vendor/three.min.js"></script>
-<script src="src/lighting.js"></script>
-<script src="src/city.js"></script>
-<script src="src/vehicles.js"></script>
-<script src="src/pedestrians.js"></script>
-<script src="src/player.js"></script>
-<script src="src/police.js"></script>
-<script src="src/combat.js"></script>
-<script src="src/missions.js"></script>
-<script src="src/audio.js"></script>
-<script src="src/hud.js"></script>
-<script src="src/shots.js"></script>
-<script src="src/main.js"></script>
+<script src="./vendor/three.min.js"></script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>
