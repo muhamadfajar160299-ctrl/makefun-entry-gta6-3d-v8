@@ -1,5 +1,6 @@
-// Marina Nights — entry point & game loop. Renderer (ACES, exposure 1.28),
-// scene, chase camera, keyboard input, and coordination of player, traffic,
+// Marina Nights — entry point & game loop. Renderer (ACES, exposure 1.28,
+// real moon shadows), scene, chase camera (speed FOV kick, corner roll,
+// impact shake), keyboard input, and coordination of player, traffic,
 // police, pedestrians, missions, combat and HUD. Exposes window.__game for
 // the driver / tests and window.__gameReady once the first frame renders.
 import { createCity } from './city.js';
@@ -154,7 +155,10 @@ window.addEventListener('resize', () => {
 });
 
 // ---- chase camera ----
+// Speed-sensitive FOV, a touch of roll in corners, and impact shake.
 const camTarget = new THREE.Vector3();
+let shakeAmt = 0;
+G.shake = function (a) { shakeAmt = Math.min(1, shakeAmt + (a || 0.3)); };
 function updateCamera(dt) {
   if (G.shotCamera) {
     camera.position.set(G.shotCamera.pos[0], G.shotCamera.pos[1], G.shotCamera.pos[2]);
@@ -163,11 +167,28 @@ function updateCamera(dt) {
   }
   const p = G.player.pos;
   const f = G.player.forward();
+  const speedRatio = Math.min(1, Math.abs(G.player.speed) / 36);
+  // FOV widens with speed: 68 cruising, ~78 flat out — the rush is felt.
+  const targetFov = 68 + speedRatio * 10;
+  if (Math.abs(camera.fov - targetFov) > 0.05) {
+    camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
+    camera.updateProjectionMatrix();
+  }
   const desired = new THREE.Vector3(p.x - f.x * 11, 4.6, p.z - f.z * 11);
   const k = 1 - Math.exp(-5 * dt);
   camera.position.lerp(desired, k);
-  camTarget.set(p.x + f.x * 9, 1.4, p.z + f.z * 9);
+  camTarget.set(p.x + f.x * (9 + speedRatio * 6), 1.4, p.z + f.z * (9 + speedRatio * 6));
   camera.lookAt(camTarget);
+  // lean the horizon slightly into corners, like a chase cam mounted on the car
+  camera.rotateZ(-G.player.steer * speedRatio * 0.03);
+  if (shakeAmt > 0.001) {
+    camera.position.x += (Math.random() - 0.5) * shakeAmt * 0.7;
+    camera.position.y += (Math.random() - 0.5) * shakeAmt * 0.5;
+    camera.position.z += (Math.random() - 0.5) * shakeAmt * 0.7;
+    shakeAmt *= Math.exp(-6 * dt);
+  } else {
+    shakeAmt = 0;
+  }
 }
 
 function animate() {
@@ -188,13 +209,25 @@ function animate() {
     G.peds.update(dt);
     G.combat.update(dt);
     G.missions.update(dt, G.time);
-    G.audio.update(G.player.speed, G.state.wanted);
+    G.audio.update(
+      G.player.speed, G.state.wanted, G.player.steer, G.player.braking,
+      G.police.nearestDist ? G.police.nearestDist(G.player.pos) : Infinity
+    );
     G.hud.setSpeed(Math.abs(G.player.speed) * 3.6);
+    G.hud.setGear(G.player.speed);
     G.hud.setMoney(G.state.money);
   } else if (G.state.started) {
     // keep the world alive behind pause/win screens (traffic drifts on)
     G.peds.update(dt);
   }
+  // living world, every frame: moon shadows track the player, yachts bob,
+  // water shimmers, and the in-game clock ticks (21:36 + 1 min / 2 s).
+  G.lighting.update(G.player.pos);
+  G.city.update(G.time);
+  const mins = 21 * 60 + 36 + Math.floor(G.time / 2);
+  const hh = String(Math.floor(mins / 60) % 24).padStart(2, '0');
+  const mm = String(mins % 60).padStart(2, '0');
+  G.hud.setClock(hh + ':' + mm + ' · NIGHT');
   if (G.state.started || G.state.shotMode) {
     G.hud.drawMinimap(G, G.time);
   }

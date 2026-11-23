@@ -50,22 +50,42 @@ export function applyShot(n, G) {
     G.hud.showMessage('LOSE THE COPS', 3000);
   } else if (n === 2) {
     // 2 — MARINA: the busy promenade, yachts, string lights, crowds.
-    // Camera sits over the water looking back at the promenade + skyline,
-    // so the bay, yachts and cafes are all in frame.
+    // Camera sits low just off the water's edge, close in, so the promenade
+    // fills the frame — the player's car (headlights on, facing the camera)
+    // in the foreground crowd, yachts and skyline behind it.
     G.setWanted(0);
-    G.player.reset(192, 60, Math.PI); // on the promenade, facing down the bay
+    G.player.reset(193, 10, 0); // on the promenade, facing the camera (+z)
     G.player.speed = 0;
     G.missions.start(0);
     G.shotCamera = {
-      pos: [250, 24, 95],
-      lookAt: [192, 2, 10],
+      pos: [206, 5.5, 38],
+      lookAt: [192, 2, 8],
     };
   } else if (n === 3) {
-    // 3 — DRIVE: flat-out down a neon street at ~130 km/h.
+    // 3 — DRIVE: flat-out down a neon street at ~130 km/h, with two traffic
+    // cars ahead in the same lane to overtake — the frame has somewhere to go.
     G.setWanted(0);
     G.player.reset(-120, 0, Math.PI / 2); // facing +x along the z=0 street
     G.player.speed = 36;
     G.missions.start(0);
+    {
+      const lead = G.traffic.cars.slice(0, 2);
+      const spots = [
+        { along: -95, lane: 3.2, speed: 11 },
+        { along: -72, lane: -3.2, speed: 9 },
+      ];
+      lead.forEach((car, i) => {
+        car.vertical = false;
+        car.street = 0;
+        car.along = spots[i].along;
+        car.lane = spots[i].lane;
+        car.dir = 1;
+        car.speed = spots[i].speed;
+        car.cruise = spots[i].speed;
+        car.pendingTurn = null;
+        car.signaling = 0;
+      });
+    }
   } else if (n === 4) {
     // 4 — WIN: mission 1 complete, reward paid, win screen up.
     G.player.reset(194, 0, Math.PI);

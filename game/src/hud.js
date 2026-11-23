@@ -33,7 +33,11 @@ export function createHud() {
   const winMission = el('win-mission');
   const winText = el('win-text');
   const winReward = el('win-reward');
+  const objDist = el('objective-dist');
+  const clockEl = el('clock');
+  const gearEl = el('gear');
   let messageTimer = null;
+  let lastWanted = 0;
 
   // Minimap geometry: world [-210, 210] -> canvas [0, 200].
   const MAP_MIN = -210, MAP_MAX = 210, MAP_SIZE = 200;
@@ -94,6 +98,13 @@ export function createHud() {
         c.beginPath(); c.arc(mx(car.pos.x), mz(car.pos.z), 3, 0, Math.PI * 2); c.fill();
       }
     }
+    // traffic: small pale dots so the player can read the flow at a glance
+    if (G.traffic) {
+      c.fillStyle = 'rgba(232,236,242,0.85)';
+      for (const car of G.traffic.cars) {
+        c.beginPath(); c.arc(mx(car.group.position.x), mz(car.group.position.z), 1.8, 0, Math.PI * 2); c.fill();
+      }
+    }
     // player: gold arrow, rotated to heading.
     // World forward is (sin h, cos h) in (x, z); the map draws z downward,
     // so the arrow (drawn pointing up) rotates by (PI - h).
@@ -148,9 +159,40 @@ export function createHud() {
     },
     setMoney(n) { if (moneyNum) moneyNum.textContent = String(n); },
     setWanted(n) {
+      // flash the stars when heat rises — the player should feel it
+      if (n > lastWanted) {
+        const wrap = el('wanted-wrap');
+        if (wrap) {
+          wrap.classList.remove('flash');
+          void wrap.offsetWidth; // restart the animation
+          wrap.classList.add('flash');
+        }
+      }
+      lastWanted = n;
       stars.forEach((s, i) => s.classList.toggle('lit', i < n));
     },
     setSpeed(kmh) { if (speedNum) speedNum.textContent = String(Math.round(kmh)); },
+    // Gear from speed: R under 0, N at standstill, 1-5 climbing to 130 km/h.
+    setGear(speedMs) {
+      if (!gearEl) return;
+      const kmh = Math.abs(speedMs) * 3.6;
+      let g;
+      if (speedMs < -0.5) g = 'R';
+      else if (kmh < 1) g = 'N';
+      else if (kmh < 25) g = '1';
+      else if (kmh < 50) g = '2';
+      else if (kmh < 80) g = '3';
+      else if (kmh < 105) g = '4';
+      else g = '5';
+      if (gearEl.textContent !== g) gearEl.textContent = g;
+    },
+    // In-game clock (21:36 at mission start, 1 game-minute per 2 real seconds).
+    setClock(text) { if (clockEl) clockEl.textContent = text; },
+    setObjectiveDistance(m) {
+      if (!objDist) return;
+      const txt = m < 1000 ? m + ' m to objective' : (m / 1000).toFixed(1) + ' km to objective';
+      if (objDist.textContent !== txt) objDist.textContent = txt;
+    },
     setObjective(title, text) {
       if (objTitle) objTitle.textContent = title;
       if (objText) objText.textContent = text;

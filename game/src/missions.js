@@ -63,6 +63,17 @@ export function createMissions(scene, G) {
   const beaconLight = new THREE.PointLight(0xffd54a, 30, 42, 1.8);
   beaconLight.position.y = 6;
   scene.add(beaconLight);
+  // floating diamond marker above the target: spins and bobs so the objective
+  // reads from any angle, even when the light pillar is behind a building.
+  const marker = new THREE.Mesh(
+    new THREE.OctahedronGeometry(1.6),
+    new THREE.MeshStandardMaterial({
+      color: 0xffd54a, emissive: 0xffb300, emissiveIntensity: 1.2,
+      roughness: 0.2, metalness: 0.6,
+    })
+  );
+  marker.position.y = 12;
+  scene.add(marker);
 
   function save() {
     try {
@@ -80,6 +91,8 @@ export function createMissions(scene, G) {
     ring.position.z = t.z;
     beaconLight.position.x = t.x;
     beaconLight.position.z = t.z;
+    marker.position.x = t.x;
+    marker.position.z = t.z;
   }
 
   function start(i) {
@@ -124,10 +137,16 @@ export function createMissions(scene, G) {
     beaconMat.opacity = 0.35 + Math.sin(t * 3) * 0.15;
     const s = 1 + Math.sin(t * 3) * 0.12;
     ring.scale.set(s, s, 1);
+    marker.rotation.y += dt * 1.4;
+    marker.position.y = 12 + Math.sin(t * 2) * 0.8;
     if (!G.state.started || G.state.paused || G.state.over || G.state.missionComplete) return;
     const m = current();
     const dx = G.player.pos.x - m.target.x;
     const dz = G.player.pos.z - m.target.z;
+    // live distance readout under the objective card
+    if (G.hud.setObjectiveDistance) {
+      G.hud.setObjectiveDistance(Math.round(Math.hypot(dx, dz)));
+    }
     if (dx * dx + dz * dz < 64) complete();
   }
 

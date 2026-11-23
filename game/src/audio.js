@@ -9,6 +9,9 @@ export function createAudio() {
   let sirenGain = null;
   let sirenLfo = null;
   let sirenOn = false;
+  let skidSrc = null;
+  let skidGain = null;
+  let skidFilter = null;
   let started = false;
 
   function init() {
@@ -48,6 +51,27 @@ export function createAudio() {
       sirenGain.connect(ctx.destination);
       sirenOsc.start();
       sirenLfo.start();
+      // Tyre skid: looped white noise through a band-pass, gain driven by
+      // hard cornering at speed (see update()).
+      try {
+        const len = ctx.sampleRate * 1;
+        const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+        skidSrc = ctx.createBufferSource();
+        skidSrc.buffer = buf;
+        skidSrc.loop = true;
+        skidFilter = ctx.createBiquadFilter();
+        skidFilter.type = 'bandpass';
+        skidFilter.frequency.value = 900;
+        skidFilter.Q.value = 1.2;
+        skidGain = ctx.createGain();
+        skidGain.gain.value = 0.0;
+        skidSrc.connect(skidFilter);
+        skidFilter.connect(skidGain);
+        skidGain.connect(ctx.destination);
+        skidSrc.start();
+      } catch (e) { /* skid unavailable: engine/siren still work */ }
     } catch (e) { /* audio unavailable: game continues silently */ }
   }
 
@@ -75,20 +99,43 @@ export function createAudio() {
   return {
     init,
     resume,
-    // Called every frame with speed (m/s) and wanted level.
-    update(speed, wanted) {
+    // Called every frame with speed (m/s), wanted level, smoothed steering
+    // (-1..1), braking flag and the nearest police distance (m, Infinity
+    // when no pursuit). All optional after wanted — old callers still work.
+    update(speed, wanted, steer, braking, policeDist) {
       if (!ctx) return;
       try {
         resume();
         const kmh = Math.abs(speed) * 3.6;
         if (engineOsc && engineGain) {
-          engineOsc.frequency.value = 55 + kmh * 1.6;
+          // 5 gears: pitch climbs inside each gear and steps down at the
+          // shift, instead of one endless rising drone.
+          const gear = kmh < 25 ? 0 : kmh < 50 ? 1 : kmh < 80 ? 2 : kmh < 105 ? 3 : 4;
+          const band = [25, 25, 30, 25, 25][gear];
+          const low = [0, 25, 50, 80, 105][gear];
+          const inGear = Math.min(1, Math.max(0, (kmh - low) / band));
+          engineOsc.frequency.value = 58 + gear * 6 + inGear * 95;
+          engineFilter.frequency.value = 380 + inGear * 500;
           engineGain.gain.value = 0.015 + Math.min(0.05, kmh * 0.00035);
         }
+        // Tyre skid on hard steering at speed, plus a faint brake squeal.
+        if (skidGain) {
+          const cornering = Math.abs(steer || 0) * Math.min(1, kmh / 70);
+          const skidTarget = cornering > 0.55 ? (cornering - 0.55) * 0.12 : 0;
+          const squeal = braking && kmh > 25 ? 0.02 : 0;
+          skidGain.gain.setTargetAtTime(Math.max(skidTarget, squeal), ctx.currentTime, 0.08);
+        }
+        // Siren fades with distance so a far pursuit sounds far away.
         const want = wanted > 0;
         if (want !== sirenOn && sirenGain) {
           sirenOn = want;
-          sirenGain.gain.setTargetAtTime(want ? 0.035 : 0.0, ctx.currentTime, 0.2);
+          const d = (policeDist === undefined || policeDist === Infinity) ? 40 : policeDist;
+          const vol = 0.035 * Math.max(0.15, 1 - d / 160);
+          sirenGain.gain.setTargetAtTime(want ? vol : 0.0, ctx.currentTime, 0.2);
+        } else if (want && sirenGain) {
+          const d = (policeDist === undefined || policeDist === Infinity) ? 40 : policeDist;
+          const vol = 0.035 * Math.max(0.15, 1 - d / 160);
+          sirenGain.gain.setTargetAtTime(vol, ctx.currentTime, 0.5);
         }
       } catch (e) {}
     },

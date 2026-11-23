@@ -8,9 +8,14 @@
 marina city at night. Drive the waterfront streets, run five jobs for the crew,
 dodge the Velmara Bay PD, and don't get busted — or wasted.
 
-Built with Three.js. Vivid ACES night lighting, a living marina promenade
-(cafes, string lights, yachts, crowds), real traffic, pedestrians, and a
-five-star wanted system.
+Built with Three.js. A realistic night drive: real moonlight with soft
+shadows that track the car, wet asphalt with puddle shine, a living marina
+promenade (cafes, string lights, bobbing yachts with navigation lights,
+crowds that walk, jog and chat), traffic that brakes for the car ahead and
+signals before turning, and a five-star wanted system where police hunt as
+a pack — one car cuts you off at your predicted position while the others
+flank and block. Cars lean into corners, dive under braking, throw sparks
+on hard hits and smoke when they're falling apart.
 
 ## How to play
 
@@ -34,16 +39,18 @@ Open `game/index.html` in a browser (or serve the `game/` folder) and press
 5. **Velmaras Grand Finale** — One last run with 3 stars on your tail. **+$1,500**
 
 Progress (mission + cash) is saved in `localStorage`. The gold beacon and the
-minimap mark every objective; wanted stars rise with the heat, and police cars
-match the wanted level one-for-one.
+minimap mark every objective (with a live distance readout); wanted stars rise
+with the heat, and police cars match the wanted level one-for-one. The HUD
+shows cash, wanted stars, vehicle damage, speed with gear, the in-game clock,
+and a live minimap with roads, traffic and police dots.
 
 ## Screenshots
 
 The driver (`main.ts`) captures four staged shots:
 
-1. `shot-1.png` — police chase, wanted 3
-2. `shot-2.png` — the busy marina promenade
-3. `shot-3.png` — flat-out drive at ~130 km/h
+1. `shot-1.png` — police chase, wanted 3, strobes painting the street
+2. `shot-2.png` — the busy marina promenade at water level, car in the crowd
+3. `shot-3.png` — flat-out drive at ~130 km/h, overtaking traffic
 4. `shot-4.png` — mission complete
 
 Run it with: `node main.ts` (needs Chromium; screenshots land in

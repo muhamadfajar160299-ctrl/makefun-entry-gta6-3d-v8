@@ -246,6 +246,28 @@ async function main(): Promise<number> {
     close();
   }
 
+  // Post-capture verification: every staged shot must exist and hold real
+  // image data — a 0-byte or thumbnail-sized PNG means the scene never
+  // rendered, and the submit must not go out on that.
+  const { statSync } = await import('node:fs');
+  let verifyOk = true;
+  for (const shot of SHOTS) {
+    const out = join(OUT_DIR, 'shot-' + shot + '.png');
+    try {
+      const size = statSync(out).size;
+      const ok = size > 10000;
+      console.log('[driver] verify: shot-' + shot + '.png ' + size + ' bytes ' + (ok ? 'OK' : 'TOO SMALL'));
+      if (!ok) verifyOk = false;
+    } catch {
+      console.error('[driver] verify: shot-' + shot + '.png MISSING');
+      verifyOk = false;
+    }
+  }
+  if (!verifyOk) {
+    console.error('[driver] screenshot verification FAILED');
+    return 1;
+  }
+
   if (errors.length > 0) {
     console.error('[driver] page JS errors detected:');
     for (const e of errors) console.error('  ' + e);

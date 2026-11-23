@@ -13,6 +13,32 @@ export const BAY_X = 200; // water starts here
 function rand(a, b) { return a + Math.random() * (b - a); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+function makeAsphaltTexture() {
+  // Wet asphalt after evening rain: near-black base, fine noise speckle,
+  // faint darker patches. Tiled along each road so the grain stays small.
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#28303e';
+  g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2600; i++) {
+    const v = Math.random();
+    g.fillStyle = v < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.16)';
+    g.fillRect(Math.random() * 128, Math.random() * 128, 1.4, 1.4);
+  }
+  for (let i = 0; i < 7; i++) {
+    g.fillStyle = 'rgba(0,0,0,0.10)';
+    g.beginPath();
+    g.ellipse(Math.random() * 128, Math.random() * 128, 12 + Math.random() * 22, 8 + Math.random() * 14, Math.random() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
 function makeWindowTexture(base, litRatio) {
   const c = document.createElement('canvas');
   c.width = 64; c.height = 128;
@@ -87,10 +113,18 @@ export function createCity(scene) {
   );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.05;
+  ground.receiveShadow = true;
   scene.add(ground);
 
   // ---- roads + sidewalks (one strip per street) ----
-  const roadMat = new THREE.MeshLambertMaterial({ color: 0x1b2434 });
+  // Wet-look asphalt: Phong specular picks up lamp and headlight highlights
+  // so the road reads damp, not flat matte. The canvas grain kills the
+  // plastic-smooth look at close range.
+  const asphaltTex = makeAsphaltTexture();
+  asphaltTex.repeat.set(1, 28);
+  const roadMat = new THREE.MeshPhongMaterial({
+    color: 0xffffff, map: asphaltTex, shininess: 70, specular: 0x5a7aa8,
+  });
   const walkMat = new THREE.MeshLambertMaterial({ color: 0x2c3a50 });
   const dashMat = new THREE.MeshBasicMaterial({ color: 0xffd54a });
   const edgeMat = new THREE.MeshBasicMaterial({ color: 0x8fa8cc });
@@ -101,11 +135,13 @@ export function createCity(scene) {
     const roadV = new THREE.Mesh(new THREE.PlaneGeometry(14, 404), roadMat);
     roadV.rotation.x = -Math.PI / 2;
     roadV.position.set(s, 0.01, 0);
+    roadV.receiveShadow = true;
     scene.add(roadV);
     // horizontal street (runs along x, stops at the promenade)
     const roadH = new THREE.Mesh(new THREE.PlaneGeometry(390, 14), roadMat);
     roadH.rotation.x = -Math.PI / 2;
     roadH.position.set(-7, 0.01, s);
+    roadH.receiveShadow = true;
     scene.add(roadH);
     // sidewalks: two strips hugging each road, OUTSIDE the driving corridor
     for (const side of [-1, 1]) {
@@ -136,6 +172,38 @@ export function createCity(scene) {
       edgeH.position.set(-7, 0.04, s + side * 6.6);
       scene.add(edgeH);
     }
+    // zebra crossings where this street meets the cross streets: white bars
+    // across the driving lane, so intersections read as real junctions.
+    for (const cs of STREETS) {
+      for (let i = -2; i <= 2; i++) {
+        const zbV = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 2.2),
+          new THREE.MeshBasicMaterial({ color: 0xdfe7f2 }));
+        zbV.position.set(cs + i * 2.6, 0.05, s - 8.4);
+        scene.add(zbV);
+        const zbH = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.05, 2.2),
+          new THREE.MeshBasicMaterial({ color: 0xdfe7f2 }));
+        zbH.position.set(cs + i * 2.6, 0.05, s + 8.4);
+        scene.add(zbH);
+      }
+    }
+  }
+
+  // ---- puddles: glossy rain pools that catch lamp light ----
+  // High-shininess Phong discs on the road surface (offset 9.2 rule does not
+  // apply — puddles are flat, cars drive over them).
+  const puddleMat = new THREE.MeshPhongMaterial({
+    color: 0x0d2438, shininess: 140, specular: 0xaaccff,
+    transparent: true, opacity: 0.85,
+  });
+  for (let i = 0; i < 16; i++) {
+    const s = pick(STREETS);
+    const vertical = Math.random() < 0.5;
+    const along = rand(-180, 180);
+    const puddle = new THREE.Mesh(new THREE.CircleGeometry(rand(1.6, 3.4), 14), puddleMat);
+    puddle.rotation.x = -Math.PI / 2;
+    puddle.scale.x = rand(1, 1.8);
+    puddle.position.set(vertical ? s + rand(-4, 4) : along, 0.03, vertical ? along : s + rand(-4, 4));
+    scene.add(puddle);
   }
 
   // ---- buildings (block interiors only, never on roads) ----
@@ -168,11 +236,37 @@ export function createCity(scene) {
         const tex = pick(textures);
         const mat = new THREE.MeshStandardMaterial({
           map: tex, emissive: 0xffffff, emissiveMap: tex,
-          emissiveIntensity: 0.5, roughness: 0.85, metalness: 0.1,
+          emissiveIntensity: rand(0.35, 0.7), roughness: 0.8, metalness: 0.15,
         });
         const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
         b.position.set(cx, h / 2, cz);
+        b.castShadow = true;
+        b.receiveShadow = true;
         scene.add(b);
+        // rooftop clutter: AC units + an antenna, so roofs aren't flat slabs
+        const roofMat = new THREE.MeshLambertMaterial({ color: 0x39434f });
+        const ac = new THREE.Mesh(new THREE.BoxGeometry(rand(2, 4), 1.1, rand(2, 3.5)), roofMat);
+        ac.position.set(cx + rand(-w / 4, w / 4), h + 0.55, cz + rand(-d / 4, d / 4));
+        ac.castShadow = true;
+        scene.add(ac);
+        if (h > 28 && Math.random() < 0.6) {
+          const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, rand(4, 8), 5), roofMat);
+          ant.position.set(cx - w / 3, h + 3, cz - d / 3);
+          scene.add(ant);
+          const tip = new THREE.Mesh(new THREE.SphereGeometry(0.22, 6, 5),
+            new THREE.MeshBasicMaterial({ color: 0xff3344 }));
+          tip.position.set(cx - w / 3, h + 3 + ant.geometry.parameters.height / 2, cz - d / 3);
+          scene.add(tip);
+        }
+        // lit shopfront at street level on some blocks: a warm glowing band
+        // facing the nearest street, so ground floors feel occupied.
+        if (!waterfront && Math.random() < 0.45) {
+          const shopColors = [0xffc98a, 0x7fe3ff, 0xff8fb0, 0xb8ff9e];
+          const shop = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, 1.6, 0.3),
+            new THREE.MeshBasicMaterial({ color: pick(shopColors) }));
+          shop.position.set(cx, 1.4, cz + d / 2 + 0.18);
+          scene.add(shop);
+        }
         // roof rim light so the skyline reads at night
         const rim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.35, d + 0.3),
           new THREE.MeshBasicMaterial({ color: pick(neonColors) }));
@@ -191,25 +285,56 @@ export function createCity(scene) {
   }
 
   // ---- bay water (east of x = 200) ----
+  const waterMat = new THREE.MeshPhongMaterial({
+    color: 0x0a3a6b, emissive: 0x061e33, shininess: 90, specular: 0x77aadd,
+  });
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(170, 560),
-    new THREE.MeshPhongMaterial({ color: 0x1a6fc0, emissive: 0x0f4066, shininess: 90, specular: 0x99ccff })
+    waterMat
   );
   water.rotation.x = -Math.PI / 2;
   // NOTE: y must sit ABOVE the ground plane (y=-0.05), or the ground hides it.
   water.position.set(285, 0.02, 0);
   scene.add(water);
+  // Moon glitter: thin bright streaks on the water that drift slowly, so the
+  // bay reads as moving water instead of a flat blue slab.
+  const streakMat = new THREE.MeshBasicMaterial({
+    color: 0x9fd4ff, transparent: true, opacity: 0.25,
+  });
+  const streaks = [];
+  for (let i = 0; i < 10; i++) {
+    const st = new THREE.Mesh(new THREE.PlaneGeometry(rand(6, 18), 0.5), streakMat);
+    st.rotation.x = -Math.PI / 2;
+    st.position.set(rand(210, 340), 0.05, rand(-260, 260));
+    scene.add(st);
+    streaks.push({ mesh: st, speed: rand(0.6, 1.8) });
+  }
 
   // ---- promenade (wide sidewalk along the bay, x 188..200) ----
   const prom = new THREE.Mesh(new THREE.BoxGeometry(12, 0.22, 404),
     new THREE.MeshLambertMaterial({ color: 0x3a4a63 }));
   prom.position.set(194, 0.11, 0);
+  prom.receiveShadow = true;
   scene.add(prom);
   // glowing bay edge
   const edgeGlow = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 404),
     new THREE.MeshBasicMaterial({ color: 0x00e5ff }));
   edgeGlow.position.set(199.6, 0.25, 0);
   scene.add(edgeGlow);
+  // safety railing along the water: posts + two rails, so the promenade edge
+  // reads as a real waterfront walk instead of an open slab.
+  const railMat = new THREE.MeshLambertMaterial({ color: 0x5a6b80 });
+  const railTop = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 404), railMat);
+  railTop.position.set(199.4, 1.15, 0);
+  scene.add(railTop);
+  const railMid = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 404), railMat);
+  railMid.position.set(199.4, 0.65, 0);
+  scene.add(railMid);
+  for (let z = -200; z <= 200; z += 8) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.15, 5), railMat);
+    post.position.set(199.4, 0.58, z);
+    scene.add(post);
+  }
 
   // ---- docks + yachts ----
   const dockMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2f });
@@ -228,6 +353,7 @@ export function createCity(scene) {
     { x: 226, z: -46, s: 1.1 }, { x: 238, z: 28, s: 0.9 }, { x: 222, z: 118, s: 1.2 },
     { x: 250, z: -128, s: 1.0 }, { x: 232, z: 152, s: 0.85 },
   ];
+  const yachts = [];
   for (const y of yachtDefs) {
     const g = new THREE.Group();
     const hull = new THREE.Mesh(new THREE.BoxGeometry(9 * y.s, 1.1, 2.8 * y.s),
@@ -250,9 +376,29 @@ export function createCity(scene) {
       new THREE.MeshBasicMaterial({ color: 0x00e5ff }));
     stripe.position.y = 0.95;
     g.add(stripe);
+    // navigation lights: red port, green starboard, warm masthead — the
+    // yachts read as occupied boats at anchor, not white boxes.
+    const navRed = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0xff3344 }));
+    navRed.position.set(4.4 * y.s, 1.1, -1.4 * y.s);
+    g.add(navRed);
+    const navGreen = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0x37e08b }));
+    navGreen.position.set(4.4 * y.s, 1.1, 1.4 * y.s);
+    g.add(navGreen);
+    const mastLight = new THREE.Mesh(new THREE.SphereGeometry(0.2, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
+    mastLight.position.set(0.5, 8.1 * y.s, 0);
+    g.add(mastLight);
+    // warm cabin windows
+    const cabGlow = new THREE.Mesh(new THREE.BoxGeometry(3.4 * y.s, 0.5, 0.12),
+      new THREE.MeshBasicMaterial({ color: 0xffd76a }));
+    cabGlow.position.set(-0.5, 1.4, 1.05 * y.s);
+    g.add(cabGlow);
     g.position.set(y.x, 0, y.z);
     g.rotation.y = rand(-0.3, 0.3);
     scene.add(g);
+    yachts.push({ group: g, baseY: 0, phase: rand(0, Math.PI * 2), rotY: g.rotation.y });
   }
 
   // ---- palms: SIDEWALK ONLY (offset 9.2 from street centreline) ----
@@ -295,5 +441,22 @@ export function createCity(scene) {
     scene.add(pl);
   }
 
-  return { buildings, palms, lamps, update() {} };
+  return {
+    buildings, palms, lamps,
+    // Living bay: yachts bob and roll gently on the swell, moon glitter
+    // drifts across the water, and the water's sheen breathes.
+    update(t) {
+      for (const y of yachts) {
+        y.group.position.y = Math.sin(t * 0.7 + y.phase) * 0.12;
+        y.group.rotation.z = Math.sin(t * 0.55 + y.phase) * 0.02;
+        y.group.rotation.y = y.rotY + Math.sin(t * 0.22 + y.phase) * 0.03;
+      }
+      for (const st of streaks) {
+        st.mesh.position.z += st.speed * 0.016;
+        if (st.mesh.position.z > 270) st.mesh.position.z = -270;
+      }
+      waterMat.emissive.setHex(0x061e33);
+      waterMat.emissiveIntensity = 0.85 + Math.sin(t * 0.8) * 0.15;
+    },
+  };
 }
