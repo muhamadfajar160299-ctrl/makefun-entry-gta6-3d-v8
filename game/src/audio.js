@@ -1,11 +1,21 @@
-// audio.js — fully synthesized sound, no audio files: a two-oscillator
-// engine whose pitch follows gear and speed, filtered-noise tyre skid,
-// and a two-tone police siren whose volume follows the nearest unit.
+// audio.js — fully procedural WebAudio: no sound files, no network.
+//
+// Engine: two detuned sawtooth oscillators through a low-pass filter, pitch
+// following RPM. Siren: a triangle wave alternating two tones, gain by
+// distance to the nearest police car. Skid: filtered noise. Everything is
+// created lazily on the first user gesture and guarded so the game never
+// fails when audio is unavailable (headless screenshots included).
 export function createAudio() {
   let ctx = null;
-  let engineOsc1 = null, engineOsc2 = null, engineGain = null, engineFilter = null;
-  let skidSrc = null, skidGain = null, skidFilter = null;
-  let sirenOsc = null, sirenGain = null;
+  let engineOsc1 = null;
+  let engineOsc2 = null;
+  let engineFilter = null;
+  let engineGain = null;
+  let sirenOsc = null;
+  let sirenGain = null;
+  let noiseBuf = null;
+  let skidSrc = null;
+  let skidGain = null;
   let muted = false;
   let started = false;
 
@@ -15,7 +25,10 @@ export function createAudio() {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return false;
       ctx = new AC();
-      // Engine: saw + square detuned, through a lowpass.
+      noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 1, ctx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      // Engine chain.
       engineOsc1 = ctx.createOscillator();
       engineOsc1.type = 'sawtooth';
       engineOsc2 = ctx.createOscillator();
@@ -23,7 +36,6 @@ export function createAudio() {
       engineFilter = ctx.createBiquadFilter();
       engineFilter.type = 'lowpass';
       engineFilter.frequency.value = 900;
-      engineFilter.Q.value = 2;
       engineGain = ctx.createGain();
       engineGain.gain.value = 0;
       engineOsc1.connect(engineFilter);
@@ -32,32 +44,28 @@ export function createAudio() {
       engineGain.connect(ctx.destination);
       engineOsc1.start();
       engineOsc2.start();
-      // Skid: looped noise through a bandpass.
-      const len = ctx.sampleRate * 1.2;
-      const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-      const data = buf.getChannelData(0);
-      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      // Siren chain.
+      sirenOsc = ctx.createOscillator();
+      sirenOsc.type = 'triangle';
+      sirenOsc.frequency.value = 750;
+      sirenGain = ctx.createGain();
+      sirenGain.gain.value = 0;
+      sirenOsc.connect(sirenGain);
+      sirenGain.connect(ctx.destination);
+      sirenOsc.start();
+      // Skid chain.
       skidSrc = ctx.createBufferSource();
-      skidSrc.buffer = buf;
+      skidSrc.buffer = noiseBuf;
       skidSrc.loop = true;
-      skidFilter = ctx.createBiquadFilter();
+      const skidFilter = ctx.createBiquadFilter();
       skidFilter.type = 'bandpass';
-      skidFilter.frequency.value = 950;
-      skidFilter.Q.value = 1.4;
+      skidFilter.frequency.value = 900;
       skidGain = ctx.createGain();
       skidGain.gain.value = 0;
       skidSrc.connect(skidFilter);
       skidFilter.connect(skidGain);
       skidGain.connect(ctx.destination);
       skidSrc.start();
-      // Siren: triangle alternating two tones.
-      sirenOsc = ctx.createOscillator();
-      sirenOsc.type = 'triangle';
-      sirenGain = ctx.createGain();
-      sirenGain.gain.value = 0;
-      sirenOsc.connect(sirenGain);
-      sirenGain.connect(ctx.destination);
-      sirenOsc.start();
       return true;
     } catch (e) {
       ctx = null;
@@ -65,41 +73,82 @@ export function createAudio() {
     }
   }
 
-  let sirenPhase = 0;
   return {
     get muted() { return muted; },
-    toggleMute() { muted = !muted; return muted; },
     start() {
       if (started) return;
-      if (ensure()) {
-        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-        started = true;
-      }
+      started = true;
+      if (ensure() && ctx.state === 'suspended') ctx.resume().catch(() => {});
     },
-    update(dt, { rpm, speedKmh, slipping, sirenDist }) {
-      if (!ctx || !started || muted) {
-        if (engineGain) engineGain.gain.value = 0;
-        if (skidGain) skidGain.gain.value = 0;
-        if (sirenGain) sirenGain.gain.value = 0;
-        return;
+    toggleMute() {
+      muted = !muted;
+      if (ctx && ctx.destination) {
+        try { ctx.destination.gain ? null : null; } catch (e) { /* noop */ }
       }
-      // Engine pitch: base 55 Hz, up to ~210 Hz at redline; load by speed.
-      const rpmSafe = Number.isFinite(rpm) ? Math.max(0, Math.min(1, rpm)) : 0.25;
-      const freq = 52 + rpmSafe * 165 + Math.min(40, speedKmh * 0.25);
-      const t = ctx.currentTime;
-      engineOsc1.frequency.setTargetAtTime(freq, t, 0.06);
-      engineOsc2.frequency.setTargetAtTime(freq * 0.5 + 3, t, 0.06);
-      engineFilter.frequency.setTargetAtTime(500 + rpmSafe * 2400, t, 0.08);
-      engineGain.gain.setTargetAtTime(0.05 + rpmSafe * 0.075, t, 0.1);
-      // Skid while slipping at speed.
-      const skid = slipping > 0.15 && speedKmh > 25 ? Math.min(0.16, slipping * 0.2) : 0;
-      skidGain.gain.setTargetAtTime(skid, t, 0.08);
-      // Siren: alternate 720 / 960 Hz every 0.45 s, gain by distance.
-      sirenPhase += dt;
-      const hi = Math.floor(sirenPhase / 0.45) % 2 === 0;
-      sirenOsc.frequency.setTargetAtTime(hi ? 960 : 720, t, 0.05);
-      const sirenVol = sirenDist === Infinity ? 0 : Math.max(0, 0.11 - sirenDist * 0.0016);
-      sirenGain.gain.setTargetAtTime(sirenVol, t, 0.15);
+      if (engineGain) engineGain.gain.value = muted ? 0 : engineGain.gain.value;
+      return muted;
+    },
+    setEngine(rpm, throttle, speedNorm) {
+      if (!ctx || muted) return;
+      try {
+        const t = ctx.currentTime;
+        const freq = 55 + rpm * 165 + throttle * 22;
+        engineOsc1.frequency.setTargetAtTime(freq, t, 0.05);
+        engineOsc2.frequency.setTargetAtTime(freq * 0.5 + 3, t, 0.05);
+        engineFilter.frequency.setTargetAtTime(500 + rpm * 1600, t, 0.08);
+        const vol = 0.028 + rpm * 0.05 + throttle * 0.02 + speedNorm * 0.015;
+        engineGain.gain.setTargetAtTime(vol, t, 0.08);
+      } catch (e) { /* audio is best-effort */ }
+    },
+    setSiren(distance, t) {
+      if (!ctx || muted) return;
+      try {
+        const near = Math.max(0, 1 - distance / 90);
+        sirenGain.gain.setTargetAtTime(near * 0.05, ctx.currentTime, 0.1);
+        const tone = Math.sin(t * 4.4) > 0 ? 920 : 680;
+        sirenOsc.frequency.setTargetAtTime(tone, ctx.currentTime, 0.03);
+      } catch (e) { /* noop */ }
+    },
+    setSkid(on) {
+      if (!ctx || muted || !skidGain) return;
+      try {
+        skidGain.gain.setTargetAtTime(on ? 0.05 : 0, ctx.currentTime, 0.06);
+      } catch (e) { /* noop */ }
+    },
+    thud(strength) {
+      if (!ctx || muted) return;
+      try {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(90, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(38, ctx.currentTime + 0.18);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.22 * strength, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+        osc.connect(g);
+        g.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.22);
+      } catch (e) { /* noop */ }
+    },
+    cashRegister() {
+      if (!ctx || muted) return;
+      try {
+        [880, 1174, 1568].forEach((f, i) => {
+          const osc = ctx.createOscillator();
+          osc.type = 'sine';
+          osc.frequency.value = f;
+          const g = ctx.createGain();
+          const at = ctx.currentTime + i * 0.09;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.12, at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, at + 0.35);
+          osc.connect(g);
+          g.connect(ctx.destination);
+          osc.start(at);
+          osc.stop(at + 0.4);
+        });
+      } catch (e) { /* noop */ }
     },
   };
 }

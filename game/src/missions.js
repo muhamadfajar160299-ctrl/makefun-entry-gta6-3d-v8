@@ -1,140 +1,116 @@
-// missions.js — five jobs across Velmara Bay. Each mission plants a floating
-// gold diamond and a beam of light on its target, tracks live distance, and
-// pays out on arrival. Completing one rolls straight into the next.
+// missions.js — five jobs across Velmara Bay.
+//
+// Each mission: a floating gold diamond over the target, a beam of light
+// marking it from across the city, live distance in the HUD, and $400 on
+// completion. Finishing a job raises the heat: later missions start with
+// the PD already looking for you.
 const THREE = window.THREE;
 
-export const MISSION_LIST = [
+export const MISSIONS = [
   {
-    id: 1, name: 'MARINA PICKUP', reward: 400,
-    desc: 'Drive to the marina promenade and pick up the package.',
-    target: { x: 150, z: -12 },
-    done: 'Package secured. Clean getaway. The next job is already lined up.',
+    id: 1, name: 'MARINA PICKUP',
+    text: 'Drive to the marina promenade and pick up the package.',
+    flavor: 'Package secured. Clean getaway. The next job is already lined up.',
+    target: { x: 140, z: 20 }, wantedOnStart: 0,
   },
   {
-    id: 2, name: 'NORTH DOCK DROP', reward: 550,
-    desc: 'Take the package to the north docks. No stops, no witnesses.',
-    target: { x: 110, z: -165 },
-    done: 'Drop made at the north docks. The fixer is pleased — for now.',
+    id: 2, name: 'DOWNTOWN DROP',
+    text: 'Take the package downtown. Lose the tail on 5th Avenue first.',
+    flavor: 'Drop made. The buyer paid in full — and the PD noticed.',
+    target: { x: -50, z: -50 }, wantedOnStart: 1,
   },
   {
-    id: 3, name: 'ROOFTOP MEET', reward: 700,
-    desc: 'Meet the contact at the west plaza. The PD is watching that block.',
-    target: { x: -165, z: 55 },
-    done: 'The contact paid in full. Word travels fast on the bay.',
+    id: 3, name: 'HARBOR RUN',
+    text: 'A crate is waiting at the north harbor gate. Go get it, fast.',
+    flavor: 'Crate loaded. That was the easy part — now run.',
+    target: { x: 50, z: -100 }, wantedOnStart: 2,
   },
   {
-    id: 4, name: 'SOUTH PIER RUN', reward: 850,
-    desc: 'Race the south pier before the tide turns. The buyer hates waiting.',
-    target: { x: 110, z: 165 },
-    done: 'Delivered with seconds to spare. The buyer paid a bonus for speed.',
+    id: 4, name: 'NEON EXCHANGE',
+    text: 'Meet the fixer under the neon row. Do not keep her waiting.',
+    flavor: 'Exchange complete. The fixer says you drive like a ghost.',
+    target: { x: -100, z: 50 }, wantedOnStart: 2,
   },
   {
-    id: 5, name: 'THE BIG SCORE', reward: 1500,
-    desc: 'One last run: the casino vault drop on the east strip. Bring it home.',
-    target: { x: 0, z: 0 },
-    done: 'The big score is yours. Velmara Bay is your city now.',
+    id: 5, name: 'BAY GETAWAY',
+    text: 'Final job: cross the bayfront and vanish into the marina lights.',
+    flavor: 'All five jobs done. Velmara Bay is yours tonight.',
+    target: { x: 140, z: 90 }, wantedOnStart: 3,
   },
 ];
 
 export function createMissions(scene) {
-  // Floating gold diamond.
+  const marker = new THREE.Group();
   const diamond = new THREE.Mesh(
-    new THREE.OctahedronGeometry(1.5),
-    new THREE.MeshStandardMaterial({ color: 0x332200, emissive: 0xf6c945, emissiveIntensity: 2.6, roughness: 0.2, metalness: 0.8 }),
+    new THREE.OctahedronGeometry(1.25),
+    new THREE.MeshStandardMaterial({
+      color: 0xffc93c, emissive: 0xffb020, emissiveIntensity: 1.4,
+      roughness: 0.25, metalness: 0.6,
+    }),
   );
-  diamond.castShadow = false;
-  scene.add(diamond);
-  // Vertical beam of light marking the target from the sky.
-  const beamMat = new THREE.MeshBasicMaterial({
-    color: 0xf6c945, transparent: true, opacity: 0.16,
-    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-  });
-  const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.4, 60, 16, 1, true), beamMat);
-  beam.position.y = 30;
-  scene.add(beam);
-  // Ground ring at the target.
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(2.2, 3.0, 32),
-    new THREE.MeshBasicMaterial({ color: 0xf6c945, transparent: true, opacity: 0.75, side: THREE.DoubleSide }),
+  diamond.position.y = 3.4;
+  marker.add(diamond);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.85, 34, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0xffd76a, transparent: true, opacity: 0.2,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }),
   );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.08;
-  scene.add(ring);
+  beam.position.y = 17;
+  marker.add(beam);
+  const glow = new THREE.PointLight(0xffc93c, 18, 22, 1.2);
+  glow.position.y = 3.4;
+  marker.add(glow);
+  scene.add(marker);
 
-  let index = 0;
-  let completed = false;
-  let completeTimer = 0;
-
-  function placeMarker(m) {
-    diamond.position.set(m.target.x, 4.5, m.target.z);
-    beam.position.set(m.target.x, 30, m.target.z);
-    ring.position.set(m.target.x, 0.08, m.target.z);
-    diamond.visible = true;
-    beam.visible = true;
-    ring.visible = true;
-  }
-  placeMarker(MISSION_LIST[0]);
-
-  return {
-    get current() { return MISSION_LIST[index]; },
-    get index() { return index; },
-    get isComplete() { return completed; },
-    setIndex(i) {
-      index = Math.max(0, Math.min(MISSION_LIST.length - 1, i));
-      completed = false;
-      completeTimer = 0;
-      placeMarker(MISSION_LIST[index]);
+  const missions = {
+    list: MISSIONS,
+    index: 0,
+    marker, diamond, beam,
+    get current() { return MISSIONS[this.index]; },
+    get done() { return this.index >= MISSIONS.length; },
+    distanceTo(player) {
+      const m = this.current;
+      if (!m) return 0;
+      return Math.hypot(m.target.x - player.x, m.target.z - player.z);
     },
-    distanceTo(playerPos) {
-      const m = MISSION_LIST[index];
-      return Math.hypot(m.target.x - playerPos.x, m.target.z - playerPos.z);
+    start(index, player) {
+      this.index = Math.max(0, Math.min(index, MISSIONS.length - 1));
+      const m = this.current;
+      marker.position.set(m.target.x, 0, m.target.z);
+      marker.visible = true;
+      return m;
     },
-    targetPos() {
-      const m = MISSION_LIST[index];
-      return { x: m.target.x, z: m.target.z };
+    update(dt, t, player) {
+      diamond.rotation.y += dt * 1.6;
+      diamond.position.y = 3.4 + Math.sin(t * 2) * 0.35;
+      beam.material.opacity = 0.16 + Math.sin(t * 2.2) * 0.05;
     },
-    update(dt, playerPos, t) {
-      // Spin + bob the diamond; pulse the beam and ring.
-      diamond.rotation.y = t * 1.6;
-      diamond.position.y = 4.5 + Math.sin(t * 2.2) * 0.5;
-      beamMat.opacity = 0.12 + Math.sin(t * 2.2) * 0.05;
-      const pulse = 1 + Math.sin(t * 3) * 0.08;
-      ring.scale.set(pulse, pulse, 1);
-      if (completed) {
-        completeTimer += dt;
+    tryComplete(player, game) {
+      if (this.done) return false;
+      if (this.distanceTo(player) < 6.5) {
+        game.cash += 400;
+        game.state = 'complete';
+        game.hud.showComplete(this.current);
+        game.audio.cashRegister();
+        marker.visible = false;
+        return true;
+      }
+      return false;
+    },
+    next() {
+      this.index += 1;
+      if (this.done) {
+        marker.visible = false;
         return null;
       }
-      const d = this.distanceTo(playerPos);
-      if (d < 7) {
-        completed = true;
-        completeTimer = 0;
-        diamond.visible = false;
-        beam.visible = false;
-        ring.visible = false;
-        return MISSION_LIST[index];
-      }
-      return null;
+      const m = this.current;
+      marker.position.set(m.target.x, 0, m.target.z);
+      marker.visible = true;
+      return m;
     },
-    advance() {
-      if (index < MISSION_LIST.length - 1) {
-        index += 1;
-        completed = false;
-        completeTimer = 0;
-        placeMarker(MISSION_LIST[index]);
-        return MISSION_LIST[index];
-      }
-      // All five done: loop back to the first job, the city never sleeps.
-      index = 0;
-      completed = false;
-      completeTimer = 0;
-      placeMarker(MISSION_LIST[0]);
-      return MISSION_LIST[0];
-    },
-    hideMarker() {
-      diamond.visible = false;
-      beam.visible = false;
-      ring.visible = false;
-    },
-    showMarker() { placeMarker(MISSION_LIST[index]); },
   };
+  missions.start(0);
+  return missions;
 }

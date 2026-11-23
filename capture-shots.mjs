@@ -1,113 +1,123 @@
-// capture-shots.mjs — VELMARA screenshot driver (dev tool, not part of the
-// graded entry). Serves game/ over localhost, opens it in headless Chromium
-// via playwright-core, stages each of the 4 shots through the game's own
-// shot director, and writes screenshots/shot-N.png. Fails if any PNG is
-// missing or under 10 KB, or if the page reports errors. PNGs are then
-// optimized to fit the 256 KiB gate limit.
-import { chromium } from '/home/hatch/workspace/node_modules/playwright-core/index.mjs';
+// capture-shots.mjs — dev tool: stages and captures the 4 dossier shots.
+//
+// Serves game/ over a local static server, opens it in headless Chromium
+// (SwiftShader WebGL), stages each shot through window.__VELMARA__, and
+// writes screenshots/shot-N.png. Exits non-zero on any page error or on a
+// staged state that does not match the shot's claim.
+//
+// Playwright is resolved through NODE_PATH (the shared install at
+// ~/workspace/scratch/playwright/node_modules):
+//   NODE_PATH=/home/hatch/workspace/scratch/playwright/node_modules node capture-shots.mjs
+import { createRequire } from 'node:module';
 import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises';
+import { join, dirname, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const GAME_DIR = path.join(ROOT, 'game');
-const SHOTS_DIR = path.join(ROOT, 'screenshots');
-const CHROME = '/home/hatch/.cache/ms-playwright/chromium-1187/chrome-linux/chrome';
+const require = createRequire(import.meta.url);
+const { chromium } = require('playwright');
+
+const ROOT = dirname(fileURLToPath(import.meta.url));
+const GAME_DIR = join(ROOT, 'game');
+const SHOTS_DIR = join(ROOT, 'screenshots');
 
 const MIME = {
   '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
-  '.json': 'application/json', '.png': 'image/png', '.css': 'text/css',
+  '.css': 'text/css', '.json': 'application/json', '.png': 'image/png',
 };
 
 function serve() {
   return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      const urlPath = decodeURIComponent(req.url.split('?')[0]);
-      const file = path.join(GAME_DIR, urlPath === '/' ? 'index.html' : urlPath);
-      if (!file.startsWith(GAME_DIR) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-        res.writeHead(404); res.end('not found'); return;
+    const server = http.createServer(async (req, res) => {
+      try {
+        const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+        const file = join(GAME_DIR, path === '/' ? 'index.html' : path);
+        if (!file.startsWith(GAME_DIR)) { res.writeHead(403); res.end(); return; }
+        const data = await readFile(file);
+        res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream' });
+        res.end(data);
+      } catch (e) {
+        res.writeHead(404);
+        res.end('not found');
       }
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
-      fs.createReadStream(file).pipe(res);
     });
     server.listen(0, '127.0.0.1', () => resolve(server));
   });
 }
 
-const OPTIMIZE_PY = `
-import sys
-from PIL import Image
-for p in sys.argv[1:]:
-    im = Image.open(p)
-    im.save(p, optimize=True)
-    import os
-    size = os.path.getsize(p)
-    print(p, size, 'bytes')
-    if size > 256 * 1024:
-        pal = im.convert('P', palette=Image.ADAPTIVE, colors=256)
-        pal.save(p, optimize=True)
-        size = os.path.getsize(p)
-        print('  quantized ->', size, 'bytes')
-    if size > 256 * 1024:
-        for w, h in [(1152, 648), (1024, 576)]:
-            im2 = im.resize((w, h), Image.LANCZOS)
-            im2.convert('P', palette=Image.ADAPTIVE, colors=256).save(p, optimize=True)
-            size = os.path.getsize(p)
-            print('  resized', w, 'x', h, '->', size, 'bytes')
-            if size <= 256 * 1024:
-                break
-`;
+const EXPECTED = {
+  1: { wanted: 3, speedKmh: 72, gear: 3, policeActive: 3, cash: 0 },
+  2: { wanted: 0, speedKmh: 0, gear: 'N', policeActive: 0, distanceToObjective: 9 },
+  3: { wanted: 1, speedKmh: 130, gear: 5, policeActive: 1, cash: 0 },
+  4: { wanted: 0, speedKmh: 0, cash: 400, state: 'complete' },
+};
+
+function checkState(n, state) {
+  const exp = EXPECTED[n];
+  const bad = [];
+  for (const [k, v] of Object.entries(exp)) {
+    if (state[k] !== v) bad.push(`${k}: got ${state[k]}, want ${v}`);
+  }
+  return bad;
+}
 
 async function main() {
+  await mkdir(SHOTS_DIR, { recursive: true });
   const server = await serve();
   const port = server.address().port;
-  console.log(`serving game/ on 127.0.0.1:${port}`);
-  const browser = await chromium.launch({
-    executablePath: CHROME,
-    headless: true,
-    args: ['--no-sandbox', '--disable-dev-shm-usage', '--enable-unsafe-swiftshader',
-      '--use-angle=swiftshader', '--disable-gpu-sandbox', '--mute-audio'],
-  });
-  const failures = [];
+  const errors = [];
+  let browser;
   try {
-    for (const n of [1, 2, 3, 4]) {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-      const errors = [];
-      page.on('pageerror', (e) => errors.push(String(e)));
-      page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-      await page.goto(`http://127.0.0.1:${port}/index.html?shot=${n}`, { waitUntil: 'load', timeout: 30000 });
-      await page.waitForFunction(() => window.__VELMARA__ && window.__VELMARA__.ready, null, { timeout: 30000 });
-      // Let the chase camera settle, traffic move, strobes flash.
-      await page.waitForTimeout(n === 4 ? 2200 : 2400);
-      const st = await page.evaluate(() => window.__VELMARA__.getState());
-      console.log(`shot ${n}:`, JSON.stringify(st));
-      if (st.errors.length > 0) failures.push(`shot ${n} page errors: ${st.errors.join(' | ')}`);
-      const out = path.join(SHOTS_DIR, `shot-${n}.png`);
-      await page.screenshot({ path: out });
-      await page.close();
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+    });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(`console: ${m.text()}`);
+    });
+    await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load', timeout: 30000 });
+    await page.waitForFunction(() => window.__VELMARA__ && window.__VELMARA__.ready, null, { timeout: 30000 });
+    // Let the first frames settle.
+    await page.waitForTimeout(1500);
+    const smoke = await page.evaluate(() => {
+      const g = window.__VELMARA__.game;
+      return {
+        state: g.state, cash: g.cash, wanted: g.wanted,
+        traffic: g.traffic.length, police: g.police.length,
+        missions: g.missions.list.length, version: g.version,
+      };
+    });
+    console.log('smoke:', JSON.stringify(smoke));
+
+    for (let n = 1; n <= 4; n++) {
+      await page.evaluate((num) => window.__VELMARA__.applyShot(num), n);
+      await page.waitForTimeout(1400);
+      const state = await page.evaluate(() => window.__VELMARA__.getShotState());
+      console.log(`shot-${n}:`, JSON.stringify(state));
+      const bad = checkState(n, state);
+      if (bad.length) errors.push(`shot-${n} state mismatch: ${bad.join('; ')}`);
+      const out = join(SHOTS_DIR, `shot-${n}.jpg`);
+      // JPEG: the bright, detailed frames are 320–450 KiB as PNG, over the
+      // 256 KiB gate cap. JPEG at quality 88 is the raw capture, just
+      // encoded smaller — the gate accepts PNG or JPEG.
+      await page.screenshot({ path: out, type: 'jpeg', quality: 88, timeout: 120000 });
+      const s = await stat(out);
+      console.log(`shot-${n}.jpg: ${s.size} bytes`);
+      if (s.size <= 10 * 1024) errors.push(`shot-${n}.jpg too small: ${s.size} bytes`);
+      if (s.size > 256 * 1024) errors.push(`shot-${n}.jpg too big: ${s.size} bytes`);
     }
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
     server.close();
   }
-
-  // Optimize PNGs to fit the 256 KiB gate limit.
-  const files = [1, 2, 3, 4].map((n) => path.join(SHOTS_DIR, `shot-${n}.png`));
-  execFileSync('python3', ['-c', OPTIMIZE_PY, ...files], { stdio: 'inherit' });
-
-  for (const f of files) {
-    const size = fs.statSync(f).size;
-    console.log(`${path.basename(f)}: ${size} bytes`);
-    if (size < 10 * 1024) failures.push(`${f} under 10 KB (${size} bytes)`);
-    if (size > 256 * 1024) failures.push(`${f} over 256 KiB (${size} bytes)`);
-  }
-  if (failures.length > 0) {
-    console.error('CAPTURE FAILED:\n' + failures.join('\n'));
+  if (errors.length) {
+    console.error('FAILED:');
+    for (const e of errors) console.error(' -', e);
     process.exit(1);
   }
-  console.log('capture-shots: all 4 shots OK');
+  console.log('OK: 4 shots, 0 page errors');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

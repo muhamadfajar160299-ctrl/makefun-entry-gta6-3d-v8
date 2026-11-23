@@ -1,80 +1,107 @@
-// shots.js — stages the four screenshots: a wanted chase, the marina, a
-// high-speed overtake, and the mission-complete screen. Each stage places
-// the player, the police and the traffic, then lets the live game render.
-const THREE = window.THREE;
+// shots.js — deterministic staging for the four screenshots.
+//
+// The capture tool calls applyShot(n) and then reads getShotState() to
+// verify the frame shows what the dossier claims. Positions are fixed so
+// every capture run stages the same scene.
+import { setWanted } from './police.js';
+import { syncGear } from './player.js';
 
-export function createShotDirector(world) {
-  function findTaxi() {
-    return world.traffic.cars.find((c) => c.kind === 'taxi')
-      || world.traffic.cars[0];
+// Traffic is repositioned onto far lanes for every shot, so a staged
+// hero never rear-ends a random car (which would kill the staged speed).
+function placeTraffic(game, lanes) {
+  game.traffic.forEach((c, i) => {
+    const lane = lanes[i % lanes.length];
+    c.x = lane + 3.5;
+    c.z = -110 + i * 22;
+    c.heading = 0;
+    c.speed = c.targetSpeed;
+    c.turnAt = null;
+    c.signal = 0;
+    c.braking = false;
+  });
+}
+
+export function applyShot(game, n) {
+  const p = game.player;
+  const cam = game.cameraRig;
+  game.state = 'playing';
+  game.stagingHold = true; // freeze staged speeds so the shot reads exactly
+  game.hud.hideStart();
+  game.hud.hidePause();
+  game.hud.hideComplete();
+  game.paused = false;
+
+  if (n === 1) {
+    // Chase: wanted 3, 72 km/h in 3rd gear, 4 police cars active.
+    p.reset(0, 60, 0);
+    p.speed = 20; // 72 km/h
+    game.wanted = 3;
+    setWanted(game.police, 3, p);
+    // Flankers close in, converging on the player; the blocker waits ahead.
+    game.police[0].x = 12; game.police[0].z = 42;
+    game.police[0].heading = 0.35; game.police[0].speed = 21;
+    game.police[1].x = -12; game.police[1].z = 44;
+    game.police[1].heading = -0.35; game.police[1].speed = 21;
+    game.police[2].x = 3; game.police[2].z = 18;
+    game.police[2].heading = 0; game.police[2].speed = 22;
+    game.police[3].x = -5; game.police[3].z = 88;
+    game.police[3].heading = 0; game.police[3].speed = 19;
+    placeTraffic(game, [50, -50]);
+    game.missions.start(0, p);
+    game.cash = 0;
+    cam.snapBehind(p);
+  } else if (n === 2) {
+    // Marina: parked at the promenade, objective diamond 9 m ahead (east).
+    p.reset(131, 20, Math.PI / 2);
+    p.speed = 0;
+    game.wanted = 0;
+    setWanted(game.police, 0, p);
+    game.missions.start(0, p);
+    game.missions.current.target = { x: 140, z: 20 };
+    game.missions.marker.position.set(140, 0, 20);
+    placeTraffic(game, [100, -100]);
+    game.cash = 0;
+    cam.snapOrbit(p, 14, 5.5);
+  } else if (n === 3) {
+    // Top speed: 130 km/h in 5th gear down the long 5th Avenue straight.
+    p.reset(50, 110, 0);
+    p.speed = 36.1; // 130 km/h
+    game.wanted = 1;
+    setWanted(game.police, 1, p);
+    game.police[0].x = 58; game.police[0].z = 78;
+    game.police[0].heading = 0; game.police[0].speed = 30;
+    placeTraffic(game, [0, -100]);
+    game.missions.start(0, p);
+    game.cash = 0;
+    cam.snapBehind(p);
+  } else if (n === 4) {
+    // Mission complete: $400 banked, overlay up, marina behind it.
+    p.reset(131, 20, Math.PI / 2);
+    p.speed = 0;
+    game.wanted = 0;
+    setWanted(game.police, 0, p);
+    game.missions.start(0, p);
+    game.cash = 400;
+    game.state = 'complete';
+    placeTraffic(game, [100, -100]);
+    game.hud.showComplete(game.missions.current);
+    cam.snapOrbit(p, 14, 5.5);
   }
+  // Gear + rpm from the staged speed, right now — not on the next frame.
+  syncGear(p);
+  game.hud.update(game, 0);
+}
 
-  function clearShotCam() { world.shotCam = null; }
-
+export function getShotState(game) {
+  const p = game.player;
   return {
-    stageShot(n) {
-      const P = world.player;
-      const M = world.missions;
-      world.setClock(21, 36);
-      world.hud.hideComplete();
-      world.state.completeOpen = false;
-      clearShotCam();
-
-      if (n === 1) {
-        // Wanted-3 chase down the avenue, strobes in the mirror.
-        M.setIndex(0);
-        P.reset(0, 115, Math.PI);
-        P.setSpeedKmh(72, 3);
-        world.holdKmh = 72;
-        world.snapCamera();
-        world.police.setWanted(3);
-        world.police.deployAround(P.state.pos, 17);
-        world.state.cash = 0;
-        world.hud.toast('WANTED — LOSE THE PD', 2000);
-      } else if (n === 2) {
-        // Marina promenade: the car at the pickup point, diamond overhead,
-        // yachts and the cafe crowd in frame.
-        M.setIndex(0);
-        P.reset(143, -18, 0.85);
-        P.setSpeedKmh(0, 1);
-        world.holdKmh = 0;
-        world.police.setWanted(0);
-        world.state.cash = 0;
-        // Side-on camera so the sea, piers and yachts read in frame.
-        world.shotCam = {
-          eye: new THREE.Vector3(118, 7.5, 8),
-          look: new THREE.Vector3(150, 1.5, -14),
-        };
-      } else if (n === 3) {
-        // 130 km/h in fifth, overtaking a taxi on the west avenue.
-        M.setIndex(0);
-        P.reset(-110, 150, Math.PI);
-        P.setSpeedKmh(130, 5);
-        world.holdKmh = 130;
-        world.snapCamera();
-        world.police.setWanted(0);
-        const taxi = findTaxi();
-        taxi.pos.set(-107.4, 0, 116);
-        taxi.heading = Math.PI;
-        taxi.speed = 11;
-        taxi.wp = 0;
-        world.state.cash = 0;
-      } else if (n === 4) {
-        // Mission complete: the package run ends at the promenade.
-        M.setIndex(0);
-        P.reset(146, -22, 0.6);
-        P.setSpeedKmh(0, 1);
-        world.holdKmh = 0;
-        world.police.setWanted(0);
-        world.state.cash = 0;
-        world.shotCam = {
-          eye: new THREE.Vector3(132, 6.5, 2),
-          look: new THREE.Vector3(148, 1.2, -14),
-        };
-        world.completeMission();
-      }
-      world.state.shot = n;
-      return true;
-    },
+    wanted: game.wanted,
+    speedKmh: Math.round(Math.abs(p.speed) * 3.6),
+    gear: p.reversing ? 'R' : p.gear === 0 ? 'N' : p.gear,
+    policeActive: game.police.filter((c) => c.active).length,
+    cash: game.cash,
+    distanceToObjective: Math.round(game.missions.distanceTo(p)),
+    mission: game.missions.current ? game.missions.current.name : null,
+    state: game.state,
   };
 }

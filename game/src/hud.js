@@ -1,132 +1,145 @@
-// hud.js — the Velmara HUD: cash, mission card, wanted stars, damage bar,
-// clock, speed + gear, and a live minimap canvas with roads, sea, player,
-// police, traffic and the gold objective diamond.
-const THREE = window.THREE;
+// hud.js — cash, wanted stars, mission box, minimap, speed, overlays.
+//
+// The minimap is a live 2D canvas: roads, the gold objective diamond,
+// red/blue police dots, white traffic dots, and the player's gold arrow.
+// Everything else is DOM updated once per frame from the game state.
+const STAR_ON = '★';
+const STAR_OFF = '☆';
 
 export function createHud() {
   const $ = (id) => document.getElementById(id);
-  const el = {
-    hud: $('hud'), cash: $('cashValue'), mTitle: $('missionTitle'), mDesc: $('missionDesc'),
-    mDist: $('missionDist'), stars: $('stars'), damageBar: $('damageBar'),
-    clock: $('clockTime'), speed: $('speedNum'), gear: $('gearBox'),
-    toast: $('toast'), start: $('startScreen'), pause: $('pauseScreen'),
-    complete: $('completeScreen'), completeSub: $('completeSub'),
-    completeDesc: $('completeDesc'), completeReward: $('completeReward'),
-    saveLine: $('saveLine'), damageFlash: $('damageFlash'),
+  const els = {
+    cash: $('cash'), stars: $('stars'), damageBar: $('damage-bar'),
+    clock: $('clock'), missionTitle: $('mission-title'),
+    missionText: $('mission-text'), missionDist: $('mission-dist'),
+    minimap: $('minimap'), speed: $('speed'), gearBox: $('gear-box'),
+    toast: $('toast'), startScreen: $('start-screen'),
+    pauseScreen: $('pause-screen'), completeScreen: $('complete-screen'),
+    completeName: $('complete-name'), completeFlavor: $('complete-flavor'),
+    completeCash: $('complete-cash'),
   };
-  const map = $('minimap');
-  const mctx = map.getContext('2d');
-
+  const ctx = els.minimap.getContext('2d');
+  const MAP_RANGE = 170; // world units shown across the minimap
   let toastTimer = null;
-  let lastCash = -1;
 
-  function renderStars(wanted) {
-    let html = '';
-    for (let i = 0; i < 5; i++) {
-      html += `<span class="${i < wanted ? 'lit' : 'dim'}">★</span>`;
+  function drawMinimap(game) {
+    const S = 216;
+    const mid = S / 2;
+    const k = S / (MAP_RANGE * 2);
+    const wx = (x) => mid + x * k;
+    const wz = (z) => mid + z * k;
+    ctx.clearRect(0, 0, S, S);
+    ctx.fillStyle = '#0d1830';
+    ctx.fillRect(0, 0, S, S);
+    // City blocks.
+    ctx.fillStyle = '#1a2740';
+    for (let bx = -125; bx <= 125; bx += 50) {
+      for (let bz = -125; bz <= 125; bz += 50) {
+        ctx.fillRect(wx(bx - 18), wz(bz - 18), 36 * k, 36 * k);
+      }
     }
-    el.stars.innerHTML = html;
-  }
-
-  function drawMinimap(state) {
-    const W = map.width, H = map.height;
-    mctx.clearRect(0, 0, W, H);
-    mctx.fillStyle = '#070b18';
-    mctx.fillRect(0, 0, W, H);
-    // World -> map: x -200..200 maps to 0..W, z -200..200 maps to 0..H.
-    const mx = (x) => ((x + 200) / 400) * W;
-    const mz = (z) => ((z + 200) / 400) * H;
-    // Sea on the east.
-    mctx.fillStyle = '#0d2a55';
-    mctx.fillRect(mx(165), 0, W - mx(165), H);
     // Roads.
-    mctx.strokeStyle = 'rgba(200,212,235,0.85)';
-    mctx.lineWidth = 2.5;
-    for (const r of [-165, -110, -55, 0, 55, 110]) {
-      mctx.beginPath(); mctx.moveTo(mx(r), mz(-192)); mctx.lineTo(mx(r), mz(192)); mctx.stroke();
-      mctx.beginPath(); mctx.moveTo(mx(-192), mz(r)); mctx.lineTo(mx(137), mz(r)); mctx.stroke();
+    ctx.strokeStyle = '#5a6a80';
+    ctx.lineWidth = 7;
+    for (const c of [-100, -50, 0, 50, 100]) {
+      ctx.beginPath(); ctx.moveTo(wx(c), 0); ctx.lineTo(wx(c), S); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, wz(c)); ctx.lineTo(S, wz(c)); ctx.stroke();
     }
-    // Promenade line.
-    mctx.strokeStyle = '#7fd4e8';
-    mctx.lineWidth = 2;
-    mctx.beginPath(); mctx.moveTo(mx(151), mz(-192)); mctx.lineTo(mx(151), mz(192)); mctx.stroke();
-    // Traffic (white dots).
-    mctx.fillStyle = '#dfe6f5';
-    for (const c of state.traffic) {
-      mctx.beginPath(); mctx.arc(mx(c.x), mz(c.z), 2, 0, Math.PI * 2); mctx.fill();
+    // Marina water.
+    ctx.fillStyle = '#1d3a58';
+    ctx.fillRect(wx(152), 0, S - wx(152), S);
+    ctx.fillStyle = '#5a6374';
+    ctx.fillRect(wx(126), 0, (152 - 126) * k, S);
+    // Objective diamond.
+    const m = game.missions.current;
+    if (m && game.state !== 'complete') {
+      ctx.save();
+      ctx.translate(wx(m.target.x), wz(m.target.z));
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = '#ffd76a';
+      ctx.shadowColor = '#ffd76a';
+      ctx.shadowBlur = 8;
+      ctx.fillRect(-5, -5, 10, 10);
+      ctx.restore();
     }
-    // Police (red dots).
-    mctx.fillStyle = '#ff3b4e';
-    for (const p of state.police) {
-      mctx.beginPath(); mctx.arc(mx(p.x), mz(p.z), 3, 0, Math.PI * 2); mctx.fill();
+    // Traffic dots.
+    ctx.fillStyle = '#ffffff';
+    for (const c of game.traffic) {
+      ctx.beginPath(); ctx.arc(wx(c.x), wz(c.z), 2.2, 0, Math.PI * 2); ctx.fill();
     }
-    // Objective: gold diamond.
-    const ox = mx(state.objective.x), oy = mz(state.objective.z);
-    mctx.fillStyle = '#f6c945';
-    mctx.beginPath();
-    mctx.moveTo(ox, oy - 6); mctx.lineTo(ox + 5, oy); mctx.lineTo(ox, oy + 6); mctx.lineTo(ox - 5, oy);
-    mctx.closePath(); mctx.fill();
-    // Player arrow (rotates with heading).
-    const px = mx(state.player.x), py = mz(state.player.z);
-    mctx.save();
-    mctx.translate(px, py);
-    mctx.rotate(Math.PI - state.player.heading); // arrow tip starts pointing north (-z)
-    mctx.fillStyle = '#f6c945';
-    mctx.beginPath();
-    mctx.moveTo(0, -7); mctx.lineTo(5, 6); mctx.lineTo(-5, 6);
-    mctx.closePath(); mctx.fill();
-    mctx.restore();
-    // North marker.
-    mctx.fillStyle = '#aeb6d4';
-    mctx.font = 'bold 11px sans-serif';
-    mctx.fillText('N', W - 14, 14);
+    // Police dots (red/blue flash).
+    for (const c of game.police) {
+      if (!c.active) continue;
+      ctx.fillStyle = Math.sin(game.time * 12) > 0 ? '#ff3333' : '#3388ff';
+      ctx.beginPath(); ctx.arc(wx(c.x), wz(c.z), 3.4, 0, Math.PI * 2); ctx.fill();
+    }
+    // Player arrow: canvas north is up, tip (0,-8) rotated by heading.
+    const p = game.player;
+    ctx.save();
+    ctx.translate(wx(p.x), wz(p.z));
+    ctx.rotate(p.heading);
+    ctx.fillStyle = '#ffd76a';
+    ctx.shadowColor = '#ffd76a';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(0, -8); ctx.lineTo(5.5, 6); ctx.lineTo(0, 3); ctx.lineTo(-5.5, 6);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // North tick.
+    ctx.fillStyle = '#9fb2cc';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('N', S - 12, 14);
   }
 
   return {
-    showGame() { el.hud.classList.add('on'); el.start.style.display = 'none'; },
-    showStart(save) {
-      el.start.style.display = 'flex';
-      el.saveLine.textContent = save && save.cash > 0
-        ? `SAVED PROGRESS — CASH $${save.cash.toLocaleString()} · MISSION ${Math.min(5, save.mission + 1)} OF 5`
-        : 'NO SAVE YET — THE BAY IS WAITING';
+    els,
+    update(game, dt) {
+      els.cash.textContent = `$${game.cash}`;
+      let stars = '';
+      for (let i = 0; i < 5; i++) {
+        stars += `<span class="${i < game.wanted ? '' : 'off'}">${i < game.wanted ? STAR_ON : STAR_OFF}</span>`;
+      }
+      els.stars.innerHTML = stars;
+      els.damageBar.style.width = `${Math.round(game.player.damage)}%`;
+      const totalMin = 21 * 60 + 36 + Math.floor(game.time / 4);
+      const hh = String(Math.floor(totalMin / 60) % 24).padStart(2, '0');
+      const mm = String(totalMin % 60).padStart(2, '0');
+      els.clock.textContent = `${hh}:${mm}`;
+      const m = game.missions.current;
+      if (m) {
+        els.missionTitle.textContent = `MISSION ${m.id} — ${m.name}`;
+        els.missionText.textContent = m.text;
+        const d = Math.round(game.missions.distanceTo(game.player));
+        els.missionDist.textContent = `${d} m to objective`;
+      } else {
+        els.missionTitle.textContent = 'ALL MISSIONS COMPLETE';
+        els.missionText.textContent = 'Velmara Bay is yours. Free roam — the city is open.';
+        els.missionDist.textContent = '';
+      }
+      els.speed.textContent = String(Math.round(Math.abs(game.player.speed) * 3.6));
+      els.gearBox.textContent = game.player.reversing ? 'R' : game.player.gear === 0 ? 'N' : String(game.player.gear);
+      drawMinimap(game);
     },
-    showPause(on) { el.pause.style.display = on ? 'flex' : 'none'; },
+    toast(msg, ms = 2600) {
+      els.toast.textContent = msg;
+      els.toast.style.opacity = '1';
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { els.toast.style.opacity = '0'; }, ms);
+    },
+    showStart() {
+      els.startScreen.classList.remove('hidden');
+      els.pauseScreen.classList.add('hidden');
+      els.completeScreen.classList.add('hidden');
+    },
+    hideStart() { els.startScreen.classList.add('hidden'); },
+    showPause() { els.pauseScreen.classList.remove('hidden'); },
+    hidePause() { els.pauseScreen.classList.add('hidden'); },
     showComplete(mission) {
-      el.completeSub.textContent = `MISSION — ${mission.name}`;
-      el.completeDesc.textContent = mission.done;
-      el.completeReward.textContent = `+$${mission.reward}`;
-      el.complete.style.display = 'flex';
+      els.completeName.textContent = `MISSION — ${mission.name}`;
+      els.completeFlavor.textContent = mission.flavor;
+      els.completeCash.textContent = '+$400';
+      els.completeScreen.classList.remove('hidden');
     },
-    hideComplete() { el.complete.style.display = 'none'; },
-    toast(text, ms = 2600) {
-      el.toast.textContent = text;
-      el.toast.style.opacity = '1';
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { el.toast.style.opacity = '0'; }, ms);
-    },
-    flashDamage(amount) {
-      el.damageFlash.style.opacity = Math.min(0.9, 0.3 + amount * 2.5);
-      setTimeout(() => { el.damageFlash.style.opacity = '0'; }, 180);
-    },
-    update(state) {
-      if (state.cash !== lastCash) {
-        el.cash.textContent = `$${state.cash.toLocaleString()}`;
-        lastCash = state.cash;
-      }
-      el.mTitle.textContent = `MISSION ${state.mission.id} — ${state.mission.name}`;
-      el.mDesc.textContent = state.mission.desc;
-      el.mDist.textContent = `${Math.round(state.distance)} m to objective`;
-      if (el.stars.dataset.w !== String(state.wanted)) {
-        renderStars(state.wanted);
-        el.stars.dataset.w = String(state.wanted);
-      }
-      el.damageBar.style.width = `${Math.round(state.damage * 100)}%`;
-      const hh = String(state.clockH).padStart(2, '0');
-      const mm = String(state.clockM).padStart(2, '0');
-      el.clock.textContent = `${hh}:${mm}`;
-      el.speed.textContent = String(Math.round(state.speedKmh));
-      el.gear.textContent = state.gearLabel;
-      drawMinimap(state);
-    },
+    hideComplete() { els.completeScreen.classList.add('hidden'); },
   };
 }

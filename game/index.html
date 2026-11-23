@@ -3,143 +3,142 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
 <title>VELMARA — Marina Nights</title>
 <style>
-  :root { --gold: #f6c945; --gold-dim: #c9a13b; --cyan: #7fd4e8; --red: #ff3b4e; --ink: #0a0e1c; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: #05070f;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eef2ff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1428;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #eef2f8; }
   #app { position: fixed; inset: 0; }
-  canvas.webgl { display: block; width: 100%; height: 100%; }
-
-  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 5;
-    background: radial-gradient(ellipse at center, transparent 52%, rgba(2,4,12,.55) 100%); }
-  #damageFlash { position: fixed; inset: 0; pointer-events: none; z-index: 6; opacity: 0;
-    background: radial-gradient(ellipse at center, transparent 55%, rgba(255,40,50,.45) 100%); }
-
-  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
-  #hud.on { display: block; }
-  .panel { background: rgba(8,12,26,.72); border: 1px solid rgba(246,201,69,.25);
-    border-radius: 10px; backdrop-filter: blur(3px); }
-
-  #cashBox { position: absolute; top: 18px; left: 20px; }
-  #cashBox .label { font-size: 11px; letter-spacing: .35em; color: #d8dcf0; font-weight: 600; }
-  #cashBox .value { font-size: 30px; font-weight: 800; color: var(--gold); line-height: 1.05;
-    text-shadow: 0 2px 12px rgba(246,201,69,.35); }
-
-  #missionCard { position: absolute; top: 86px; left: 20px; width: 330px; padding: 12px 14px 12px 16px;
-    border-left: 4px solid var(--gold); }
-  #missionCard .m-title { font-size: 12px; letter-spacing: .22em; color: var(--gold); font-weight: 700; }
-  #missionCard .m-desc { font-size: 14px; line-height: 1.45; color: #e8ecff; margin-top: 6px; }
-  #missionCard .m-dist { font-size: 13px; color: var(--cyan); margin-top: 8px; font-weight: 600; }
-
-  #wantedBox { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
-  #stars { font-size: 26px; letter-spacing: 6px; line-height: 1; text-shadow: 0 0 14px rgba(246,201,69,.6); }
-  #stars .lit { color: var(--gold); }
-  #stars .dim { color: rgba(160,170,200,.45); }
-  #wantedLabel { font-size: 11px; letter-spacing: .4em; color: #c6cdea; margin-top: 4px; font-weight: 600; }
-  #damageWrap { width: 210px; margin: 8px auto 0; }
-  #damageLabel { font-size: 10px; letter-spacing: .3em; color: #9aa3c0; text-align: center; }
-  #damageBarOuter { height: 5px; background: rgba(255,255,255,.14); border-radius: 3px; margin-top: 3px; overflow: hidden; }
-  #damageBar { height: 100%; width: 0%; background: linear-gradient(90deg, #ffb02e, #ff3b4e); border-radius: 3px; }
-
-  #clockBox { position: absolute; top: 18px; right: 22px; font-size: 15px; font-weight: 700;
-    letter-spacing: .14em; color: #eef2ff; text-shadow: 0 1px 8px rgba(0,0,0,.8); }
-
-  #mapWrap { position: absolute; left: 20px; bottom: 20px; }
-  #mapWrap .map-title { font-size: 10px; letter-spacing: .35em; color: #aeb6d4; margin-bottom: 5px; font-weight: 600; }
-  #minimap { display: block; border: 2px solid var(--gold); border-radius: 8px;
-    background: rgba(6,10,24,.85); box-shadow: 0 4px 24px rgba(0,0,0,.6); }
-
-  #speedBox { position: absolute; right: 24px; bottom: 20px; text-align: right; }
-  #controlsHint { font-size: 11px; line-height: 1.7; color: #b9c1de; letter-spacing: .06em;
-    text-shadow: 0 1px 6px rgba(0,0,0,.9); }
-  #speedNum { font-size: 64px; font-weight: 800; line-height: .95; color: #fff;
-    text-shadow: 0 3px 18px rgba(0,0,0,.75); }
-  #speedRow { display: flex; align-items: baseline; justify-content: flex-end; gap: 10px; }
-  #speedUnit { font-size: 13px; color: var(--gold); font-weight: 700; letter-spacing: .2em; }
-  #gearBox { font-size: 20px; font-weight: 800; color: var(--gold); border: 2px solid var(--gold);
-    border-radius: 6px; padding: 1px 9px; min-width: 40px; text-align: center; }
-
-  #toast { position: absolute; top: 34%; left: 50%; transform: translate(-50%,-50%); text-align: center;
-    font-size: 22px; font-weight: 700; letter-spacing: .12em; color: #fff; opacity: 0;
-    transition: opacity .3s; text-shadow: 0 2px 16px rgba(0,0,0,.9); pointer-events: none; }
-
-  #startScreen, #pauseScreen, #completeScreen { position: fixed; inset: 0; z-index: 20;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-  #startScreen { background: linear-gradient(180deg, rgba(4,6,16,.82), rgba(4,6,16,.55) 55%, rgba(4,6,16,.88)); }
-  #pauseScreen, #completeScreen { background: rgba(3,5,14,.72); backdrop-filter: blur(3px); display: none; }
-  .game-title { font-size: 74px; font-weight: 900; letter-spacing: .18em; color: #fff;
-    text-shadow: 0 0 34px rgba(127,212,232,.55), 0 4px 0 rgba(246,201,69,.9); }
-  .game-sub { font-size: 17px; letter-spacing: .55em; color: var(--gold); margin-top: 6px; font-weight: 700; }
-  .game-tag { margin-top: 18px; font-size: 15px; color: #c9d1ec; max-width: 560px; line-height: 1.6; }
-  .big-btn { pointer-events: auto; cursor: pointer; margin-top: 30px; font-size: 16px; font-weight: 800;
-    letter-spacing: .3em; color: #14100a; background: linear-gradient(180deg, #ffe082, var(--gold));
-    border: none; border-radius: 10px; padding: 15px 44px; box-shadow: 0 6px 30px rgba(246,201,69,.45); }
-  .big-btn:hover { filter: brightness(1.08); }
-  .keys-line { margin-top: 26px; font-size: 12.5px; color: #9aa3c0; letter-spacing: .08em; line-height: 1.9; }
-  .keys-line b { color: #e8ecff; }
-  #completeTitle { font-size: 52px; font-weight: 900; letter-spacing: .22em; color: var(--gold);
-    text-shadow: 0 0 30px rgba(246,201,69,.6); }
-  #completeSub { font-size: 15px; letter-spacing: .5em; color: var(--cyan); margin-top: 10px; font-weight: 700; }
-  #completeDesc { margin-top: 16px; font-size: 15px; color: #dfe4f8; }
-  #completeReward { margin-top: 22px; font-size: 30px; font-weight: 800; color: #3ddc84; }
-  #pauseTitle { font-size: 40px; font-weight: 900; letter-spacing: .3em; color: #fff; }
-  #saveLine { margin-top: 14px; font-size: 12px; color: #8f97b8; letter-spacing: .1em; }
+  #game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .hud { position: absolute; pointer-events: none; user-select: none; }
+  .panel { background: rgba(8, 14, 30, 0.62); border: 1px solid rgba(255, 214, 120, 0.28);
+    border-radius: 10px; backdrop-filter: blur(2px); }
+  /* cash */
+  #cash-box { top: 16px; left: 18px; padding: 6px 14px 8px; }
+  #cash-box .label { font-size: 10px; letter-spacing: 4px; color: #9fb2cc; }
+  #cash { font-size: 30px; font-weight: 800; color: #ffd76a; line-height: 1; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+  /* wanted */
+  #wanted-box { top: 14px; left: 50%; transform: translateX(-50%); text-align: center; padding: 6px 18px 8px; }
+  #stars { font-size: 22px; letter-spacing: 4px; line-height: 1; color: #ffd76a;
+    text-shadow: 0 0 12px rgba(255, 190, 60, .8); }
+  #stars .off { color: rgba(255,255,255,.22); text-shadow: none; }
+  #wanted-box .label { font-size: 10px; letter-spacing: 5px; color: #c8d4e6; margin-top: 2px; }
+  #damage-wrap { width: 190px; height: 5px; background: rgba(255,255,255,.14); border-radius: 3px;
+    margin-top: 7px; overflow: hidden; }
+  #damage-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #ffb03a, #ff4d4d); }
+  #damage-label { font-size: 9px; letter-spacing: 3px; color: #9fb2cc; margin-top: 3px; }
+  /* clock */
+  #clock-box { top: 16px; right: 18px; font-size: 15px; font-weight: 700; letter-spacing: 2px;
+    color: #eaf1fb; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
+  /* mission */
+  #mission-box { top: 96px; left: 18px; width: 330px; padding: 12px 14px; border-left: 4px solid #ffd76a; }
+  #mission-title { font-size: 12px; font-weight: 800; letter-spacing: 3px; color: #ffd76a; }
+  #mission-text { font-size: 14px; line-height: 1.45; color: #e8eef7; margin-top: 5px; }
+  #mission-dist { font-size: 13px; font-weight: 700; color: #8fd8ff; margin-top: 7px; }
+  /* minimap */
+  #map-wrap { left: 18px; bottom: 16px; }
+  #map-wrap .label { font-size: 10px; letter-spacing: 4px; color: #9fb2cc; margin-bottom: 4px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+  #minimap { display: block; width: 216px; height: 216px; border-radius: 8px;
+    border: 2px solid rgba(255, 214, 120, .55); background: #0d1830;
+    box-shadow: 0 4px 24px rgba(0,0,0,.5); }
+  /* speed */
+  #speed-box { right: 18px; bottom: 16px; text-align: right; }
+  #speed { font-size: 56px; font-weight: 800; line-height: .95; color: #fff;
+    text-shadow: 0 2px 14px rgba(0,0,0,.75); }
+  #speed-unit { font-size: 12px; letter-spacing: 3px; color: #ffd76a; font-weight: 700; }
+  #gear-box { display: inline-block; margin-top: 6px; padding: 3px 12px; border: 2px solid #ffd76a;
+    border-radius: 6px; font-size: 18px; font-weight: 800; color: #ffd76a;
+    background: rgba(8,14,30,.6); }
+  #controls-hint { margin-top: 10px; font-size: 11px; line-height: 1.7; letter-spacing: 1px;
+    color: rgba(230, 238, 250, .85); text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+  /* toast */
+  #toast { left: 50%; top: 22%; transform: translateX(-50%); padding: 10px 22px; font-size: 15px;
+    font-weight: 700; letter-spacing: 1px; color: #ffe9a8; opacity: 0; transition: opacity .3s; }
+  /* overlays */
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; pointer-events: auto; }
+  #start-screen { background: radial-gradient(ellipse at 50% 38%, rgba(20, 38, 74, .42), rgba(4, 8, 20, .82)); }
+  #start-screen h1 { font-size: 74px; font-weight: 900; letter-spacing: 14px; color: #ffd76a;
+    text-shadow: 0 0 34px rgba(255, 190, 60, .55), 0 4px 18px rgba(0,0,0,.8); }
+  #start-screen h2 { font-size: 20px; letter-spacing: 10px; color: #8fd8ff; margin-top: 6px; }
+  #start-screen p { max-width: 560px; margin-top: 18px; font-size: 15px; line-height: 1.65; color: #dbe5f2; }
+  #start-btn, #next-btn, #resume-btn { margin-top: 26px; padding: 14px 42px; font-size: 16px; font-weight: 800;
+    letter-spacing: 4px; color: #1a1206; background: linear-gradient(180deg, #ffe27a, #f5b81e);
+    border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 6px 30px rgba(245, 184, 30, .45); }
+  #start-btn:hover, #next-btn:hover, #resume-btn:hover { filter: brightness(1.1); }
+  #start-controls { margin-top: 22px; font-size: 13px; line-height: 2; letter-spacing: 1px; color: #b9c7dc; }
+  #pause-screen { background: rgba(4, 8, 20, .72); }
+  #complete-screen { background: rgba(4, 8, 20, .55); }
+  #pause-screen h1 { font-size: 44px; letter-spacing: 10px; color: #fff; }
+  #complete-screen h1 { font-size: 58px; letter-spacing: 10px; color: #ffd76a;
+    text-shadow: 0 0 30px rgba(255, 190, 60, .6); }
+  #complete-screen h2 { font-size: 15px; letter-spacing: 7px; color: #8fd8ff; margin-top: 10px; }
+  #complete-screen p { margin-top: 14px; font-size: 15px; color: #dbe5f2; }
+  #complete-cash { margin-top: 10px; font-size: 34px; font-weight: 800; color: #4ade80; }
+  .hidden { display: none !important; }
+  #vignette { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 62%, rgba(2, 6, 18, .28) 100%); }
 </style>
 </head>
 <body>
-<div id="app"></div>
-<div id="vignette"></div>
-<div id="damageFlash"></div>
+<div id="app">
+  <canvas id="game-canvas"></canvas>
+  <div id="vignette"></div>
 
-<div id="hud">
-  <div id="cashBox"><div class="label">CASH</div><div class="value" id="cashValue">$0</div></div>
-  <div id="missionCard" class="panel">
-    <div class="m-title" id="missionTitle">MISSION 1 — MARINA PICKUP</div>
-    <div class="m-desc" id="missionDesc">Drive to the marina promenade and pick up the package.</div>
-    <div class="m-dist" id="missionDist">197 m to objective</div>
-  </div>
-  <div id="wantedBox">
+  <div id="cash-box" class="hud panel"><div class="label">CASH</div><div id="cash">$0</div></div>
+
+  <div id="wanted-box" class="hud panel">
     <div id="stars"></div>
-    <div id="wantedLabel">WANTED</div>
-    <div id="damageWrap"><div id="damageLabel">VEHICLE DAMAGE</div>
-      <div id="damageBarOuter"><div id="damageBar"></div></div></div>
+    <div class="label">WANTED</div>
+    <div id="damage-wrap"><div id="damage-bar"></div></div>
+    <div id="damage-label">VEHICLE DAMAGE</div>
   </div>
-  <div id="clockBox"><span id="clockTime">21:36</span> · NIGHT</div>
-  <div id="mapWrap"><div class="map-title">VELMARA BAY</div><canvas id="minimap" width="220" height="190"></canvas></div>
-  <div id="speedBox">
-    <div id="controlsHint">WASD / ARROWS — DRIVE<br>SPACE — BRAKE &nbsp;·&nbsp; P — PAUSE<br>R — RESTART MISSION</div>
-    <div id="speedRow"><span id="speedNum">0</span></div>
-    <div id="speedRow"><span id="speedUnit">KM/H</span><span id="gearBox">N</span></div>
+
+  <div id="clock-box" class="hud"><span id="clock">21:36</span> &middot; NIGHT</div>
+
+  <div id="mission-box" class="hud panel">
+    <div id="mission-title">MISSION 1 &mdash; MARINA PICKUP</div>
+    <div id="mission-text">Drive to the marina promenade and pick up the package.</div>
+    <div id="mission-dist">194 m to objective</div>
   </div>
-  <div id="toast"></div>
-</div>
 
-<div id="startScreen">
-  <div class="game-title">VELMARA</div>
-  <div class="game-sub">MARINA NIGHTS</div>
-  <div class="game-tag">A neon marina city after dark. Steal a car, outrun the Velmara PD,
-    run five jobs for the bay's fixers — and don't scratch the paint.</div>
-  <button class="big-btn" id="startBtn">START ENGINE</button>
-  <div class="keys-line"><b>W A S D</b> drive &nbsp;·&nbsp; <b>SPACE</b> brake &nbsp;·&nbsp; <b>SHIFT</b> handbrake &nbsp;·&nbsp; <b>P</b> pause<br>
-    <b>C</b> camera &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>R</b> restart mission</div>
-  <div id="saveLine"></div>
-</div>
+  <div id="map-wrap" class="hud">
+    <div class="label">VELMARA BAY</div>
+    <canvas id="minimap" width="216" height="216"></canvas>
+  </div>
 
-<div id="pauseScreen">
-  <div id="pauseTitle">PAUSED</div>
-  <div class="game-tag">The bay waits for no one. Press P to get back behind the wheel.</div>
-  <button class="big-btn" id="resumeBtn">RESUME</button>
-</div>
+  <div id="speed-box" class="hud">
+    <div><span id="speed">0</span></div>
+    <div><span id="speed-unit">KM/H</span> <span id="gear-box">N</span></div>
+    <div id="controls-hint">WASD / ARROWS &mdash; DRIVE<br>SPACE &mdash; BRAKE &nbsp;&middot;&nbsp; P &mdash; PAUSE<br>R &mdash; RESTART MISSION</div>
+  </div>
 
-<div id="completeScreen">
-  <div id="completeTitle">MISSION COMPLETE</div>
-  <div id="completeSub">MISSION — MARINA PICKUP</div>
-  <div id="completeDesc">Package secured. Clean getaway. The next job is already lined up.</div>
-  <div id="completeReward">+$400</div>
-  <button class="big-btn" id="nextBtn">NEXT MISSION</button>
+  <div id="toast" class="hud panel"></div>
+
+  <div id="start-screen" class="overlay">
+    <h1>VELMARA</h1>
+    <h2>MARINA NIGHTS</h2>
+    <p>An open-world night drive through Velmara Bay. Take the jobs, outrun the
+       Velmara PD, and own the marina &mdash; one glowing mile at a time.</p>
+    <button id="start-btn">START ENGINE</button>
+    <div id="start-controls">WASD / ARROWS &mdash; drive &nbsp;&middot;&nbsp; SPACE &mdash; brake &nbsp;&middot;&nbsp; P &mdash; pause<br>
+      M &mdash; mute &nbsp;&middot;&nbsp; R &mdash; restart mission &nbsp;&middot;&nbsp; 5 missions &mdash; $400 each</div>
+  </div>
+
+  <div id="pause-screen" class="overlay hidden">
+    <h1>PAUSED</h1>
+    <p style="margin-top:12px;color:#b9c7dc">Take a breath. The marina will wait.</p>
+    <button id="resume-btn">RESUME</button>
+  </div>
+
+  <div id="complete-screen" class="overlay hidden">
+    <h1>MISSION COMPLETE</h1>
+    <h2 id="complete-name">MISSION &mdash; MARINA PICKUP</h2>
+    <p id="complete-flavor">Package secured. Clean getaway. The next job is already lined up.</p>
+    <div id="complete-cash">+$400</div>
+    <button id="next-btn">NEXT MISSION</button>
+  </div>
 </div>
 
 <script src="./vendor/three.min.js"></script>

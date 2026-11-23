@@ -1,101 +1,122 @@
 # VELMARA — Marina Nights
 
-[![Make GTA 6](https://img.shields.io/badge/make.fun-gta6--01-7c5cff?style=flat-square)](https://make.fun/bounty/gta6-01)
-[![Reward $1,666](https://img.shields.io/badge/reward-%241%2C666-gold?style=flat-square)](https://make.fun/bounty/gta6-01)
-[![Closes 24 Nov 2026](https://img.shields.io/badge/closes-24_Nov_2026_22%3A00_WIB-orange?style=flat-square)](https://make.fun/bounty/gta6-01)
+[![make.fun](https://img.shields.io/badge/make.fun-gta6--01-gold)](https://make.fun/c/gta6-01)
+[![entry](https://img.shields.io/badge/entry-VELMARA%20r18-brightgreen)](https://make.fun/c/gta6-01)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-An open-world crime game in the spirit of GTA 6, set in **Velmara Bay** — a neon
-marina city after dark. Built with Three.js, served as plain static files, no
-network requests, no build step. Open `game/index.html` in desktop Chrome and
-drive.
+An open-world night-drive crime game in the spirit of GTA 6, built with
+Three.js and plain static files — no build step, no network requests.
 
-## The city
+You are a getaway driver in **Velmara Bay**, a wet marina city that never
+sleeps. Take five jobs across the bayfront, outrun the Velmara PD, and bank
+$400 a mission — while the city glows around you: lit windows, neon
+storefronts, yachts bobbing at the marina, and your headlights cutting
+through the night.
 
-A full night grid: six avenues crossed by six streets, wet asphalt that
-catches the moonlight, sixteen glossy puddles, zebra crossings, towers with
-lit windows and neon roof lines, rooftop AC units, antennas and blinking red
-beacons, glowing shopfronts with awnings, palms and street lamps — and to the
-east, the marina itself: a promenade with railings, benches and cafe tables,
-wooden piers, yachts bobbing on dark water under a drifting band of
-moon-glitter, their red and green navigation lights blinking.
+## Play
 
-## What you can do
+Serve `game/` with any static server and open `game/index.html` in desktop
+Chrome:
 
-- **Drive** — a detailed player car (grille, spoiler, mirrors, exhausts,
-  headlight cones) with a torque curve, five gears, steering that weights up
-  with speed, body roll, dive and squat, brake and reverse lights, and tyre
-  slip on the handbrake.
-- **Traffic** — sedans, taxis (checker band, roof sign) and vans, each a
-  distinct model. They signal before turning, light their brake lights, and
-  brake for the car ahead.
-- **Police** — the Velmara PD runs role-based pursuit: one unit intercepts
-  your predicted position, the others pursue from the flanks, and a unit that
-  gets ahead of you turns to block the road. Wanted level 1–5, red/blue
-  strobes, speed that scales with distance.
-- **Pedestrians** — a real walk cycle (legs and arms swing in opposition),
-  varied heights, joggers leaning forward, five pairs chatting at the cafe —
-  and people who step aside early when your car bears down on them.
-- **Missions** — five jobs, from the Marina Pickup ($400) to The Big Score
-  ($1,500). A floating gold diamond and a beam of light mark each target,
-  with live distance on the HUD and in the minimap.
-- **Combat & feel** — collision sparks and smoke, damage that degrades
-  handling, camera shake, FOV kick, roll and look-ahead on the chase camera,
-  a cinematic vignette, and a damage flash.
-- **Sound** — fully synthesized: an engine whose pitch follows gear and
-  speed, tyre skid, and a two-tone siren that gets louder as the PD closes in.
-- **Save** — cash and mission progress persist in localStorage.
-
-## Controls
+```sh
+npx serve game
+# or
+python3 -m http.server --directory game 8080
+```
 
 | Key | Action |
 | --- | --- |
-| W A S D / arrows | Drive |
+| W / A / S / D or arrows | Drive / steer |
 | Space | Brake |
-| Shift | Handbrake |
 | P | Pause |
-| C | Camera |
-| M | Mute |
 | R | Restart mission |
+| M | Mute |
+| Enter | Start / next mission |
+
+## What is in the game
+
+- **Open world** — a 5×5 block downtown grid plus a marina promenade:
+  wet blue-grey asphalt with mirror puddles, zebra crossings, glowing
+  storefronts, detailed rooftops (AC units, antennas, blinking beacons),
+  palms, cafes, and yachts with navigation lights on dark water with a
+  moving moon-glint streak.
+- **Lighting (round 18)** — the night is bright and readable: strong
+  ambient + hemisphere + moonlight, a warm fill light that rides with the
+  hero car, street lamps with real point lights and additive light pools,
+  ACES tone mapping at 1.7 exposure. The hero car, the road, the buildings
+  and the police are all clearly visible — no silhouettes.
+- **Hero car** — a crimson coupe with grille, chrome strip, spoiler,
+  mirrors, twin exhausts, volumetric-look headlight cones and two real
+  spotlights. 5-gear torque curve, steering that weights up with speed,
+  body roll, brake dive and launch squat, brake + reverse lights.
+- **Police** — Velmara PD with three AI roles: INTERCEPT (drives to your
+  predicted position), PURSUE (flanks you), BLOCK (parks across the road
+  ahead). Red/blue strobes throw colour onto the asphalt; wanted level
+  stars in the HUD.
+- **Traffic** — vans, taxis and sedans that brake for the car ahead and
+  signal before turning.
+- **Pedestrians** — walkers with a real limb-swing cycle, joggers, and
+  cafe groups chatting by the umbrellas.
+- **Missions** — five jobs with a floating gold diamond marker, a light
+  beam visible across the city, live distance, and $400 per completion.
+- **Combat & effects** — sparks and smoke on impact, damage that degrades
+  handling, camera shake, FOV kick, roll and look-ahead, cinematic
+  vignette, procedural engine / siren / skid audio (WebAudio, no files).
+- **HUD & save** — cash, wanted stars, damage bar, mission box, live
+  minimap (player arrow, objective diamond, police dots), speed + gear,
+  game clock. Cash and mission progress autosave to localStorage.
 
 ## Screenshots
 
-Four renders of the game itself, taken by the built-in shot director
-(`game/src/shots.js`):
+Four staged shots in `screenshots/` (cover first):
 
-1. `shot-1.png` — wanted-3 chase down the avenue, strobes flashing.
-2. `shot-2.png` — the marina promenade at the pickup point.
-3. `shot-3.png` — 130 km/h in fifth, overtaking a taxi.
-4. `shot-4.png` — mission complete, +$400.
+1. **Chase** — wanted 3, 72 km/h in 3rd gear, 4 police cars active.
+2. **Marina** — parked at the promenade, objective diamond 9 m ahead.
+3. **Top speed** — 130 km/h in 5th gear down 5th Avenue.
+4. **Mission complete** — $400 banked.
 
-## Structure
+Capture them again with the dev tool (needs Playwright + Chromium):
 
-```
-game/
-  index.html          page + HUD
-  vendor/three.min.js vendored Three.js (UMD build)
-  src/
-    main.js           boot, game loop, camera, collisions, save
-    lighting.js       moon shadows, stars, halo, night grade
-    city.js           roads, towers, marina, piers, yachts, sea
-    player.js         player car model + arcade physics
-    vehicles.js       traffic (sedan / taxi / van)
-    police.js         PD pursuit AI + wanted system
-    pedestrians.js    walkers, joggers, cafe chatter
-    missions.js       five jobs + gold diamond marker
-    hud.js            cash, stars, minimap, speed, overlays
-    combat.js         sparks, smoke, camera shake
-    audio.js          synthesized engine, skid, siren
-    shots.js          screenshot staging director
+```sh
+NODE_PATH=/home/hatch/workspace/scratch/playwright/node_modules node capture-shots.mjs
 ```
 
-`main.ts` (Node 22, standard library only) copies `game/` and `screenshots/`
-to the output directory and writes `dossier.json` with `buildDossier` from
-`vendor/makefun-game.ts`:
+## Hand in
+
+`main.ts` (Node 22, stdlib only) copies `game/` + `screenshots/` to the
+output directory and writes `dossier.json` with the kit's `buildDossier`.
+It validates every screenshot (PNG/JPEG, over 10 KiB, at most 256 KiB) and
+is deterministic — two runs write identical bytes:
 
 ```sh
 mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
 
+## Layout
+
+```
+game/
+  index.html          HUD + import map (three.js vendored)
+  vendor/three.min.js
+  src/
+    main.js           bootstrap, camera, loop, save
+    lighting.js       night lighting (ambient/hemi/moon/fill/lamps)
+    city.js           roads, buildings, marina, yachts, water
+    vehicles.js       car factory + traffic AI
+    player.js         hero physics (5 gears, body roll, damage)
+    police.js         PD roles: INTERCEPT / PURSUE / BLOCK
+    pedestrians.js    walkers, joggers, cafe chatter
+    missions.js       5 jobs, gold diamond marker, $400 each
+    combat.js         sparks, smoke, collisions
+    hud.js            cash, stars, minimap, overlays
+    audio.js          procedural engine / siren / skid
+    shots.js          deterministic staging for the 4 screenshots
+main.ts               entry program (copies game + screenshots, dossier)
+capture-shots.mjs     dev tool: stages + captures the 4 screenshots
+```
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Original work: Velmara Bay, its people and
+its cars are invented for this entry and copy nothing from any commercial
+game.
