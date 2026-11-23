@@ -3,7 +3,7 @@
 // vendored library. Standard library only, deterministic: two runs
 // write byte-identical output.
 import { buildDossier } from "./vendor/makefun-game.ts";
-import { cpSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,7 +25,7 @@ function checkScreenshots(dir: string): void {
 
 function main(): void {
   checkScreenshots(SHOTS_SRC);
-  rmSync(OUT, { recursive: true, force: true });
+  if (existsSync(OUT)) for (const name of readdirSync(OUT)) rmSync(join(OUT, name), { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
   const gameOut = join(OUT, "game");
   const shotsOut = join(OUT, "screenshots");
