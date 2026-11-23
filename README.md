@@ -1,8 +1,8 @@
 # Marina Nights — GTA 6
 
-[![Make.fun Competition](https://img.shields.io/badge/make.fun-gta6--01-7c4dff)](https://make.fun/competitions/gta6-01)
-[![Make.fun Rank](https://img.shields.io/badge/make.fun-rank-live-00e5ff)](https://make.fun/competitions/gta6-01)
-[![Make.fun Reward](https://img.shields.io/badge/make.fun-reward-%24500-ffd54a)](https://make.fun/competitions/gta6-01)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/muhamadfajar160299-ctrl/makefun-entry-gta6-3d-v8/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/muhamadfajar160299-ctrl/makefun-entry-gta6-3d-v8/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
 **Marina Nights** is a 3D open-world driving game set in **VELMARA BAY**, a neon
 marina city at night. Drive the waterfront streets, run five jobs for the crew,
