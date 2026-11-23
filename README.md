@@ -1,7 +1,8 @@
 # VELMARA — Bayfront Getaway
 
-[![make.fun gta6-01](https://img.shields.io/badge/make.fun-gta6--01-gold)](https://make.fun/c/gta6-01)
-[![entry VELMARA r19](https://img.shields.io/badge/entry-VELMARA%20r19-brightgreen)](https://make.fun/c/gta6-01)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/muhamadfajar160299-ctrl/makefun-entry-gta6-3d-v8/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/muhamadfajar160299-ctrl/makefun-entry-gta6-3d-v8/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![license MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 **VELMARA** is an open-world crime game set in **Velmara Bay**, a bright
